@@ -21,7 +21,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 1 | 仓库骨架、契约、config、JSONL IO、CLI、Mock 端到端、缓存键 | `pytest` 绿；产出完整 run record | ✅ |
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
-| 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 待做 |
+| 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 探针数据 ✅；稳定性跑批待做 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
@@ -101,6 +101,23 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
   避免模型措辞漂移污染信号指纹；完整内容仍在 `RunRecord.signals`。
 - 全管线真实跑通：e002 冷跑 ai_smell 0.875（规则 5 条 + LLM 补 1 条语义套路、1 条重叠跳过），
   热跑 4 次缓存命中、成本 0。
+
+## Day 4 探针数据（待跑）
+
+- `data/probe/stability_probe.jsonl`：30 条，5 场景各 6 条；`source=synthetic`，
+  `probe_` 前缀，单独目录，不与 `data/eval` 混。
+- `data/probe/manifest.json`：`intended_sarcasm` / `intended_emotion` 与备注，用于覆盖审查。
+- `scripts/probe_report.py` 校验（零成本）：
+
+```
+banter 3/3/6, boundary 3/3/6, casual 3/3/6, comfort 2/4/6, work 3/3/6
+total 14 sarcastic / 16 literal
+```
+
+- 16 条 literal 中 8 条为“平静/日常”，其余覆盖失落、焦虑、疲惫、开心、尴尬等；
+  固定情绪集合 10 类里覆盖 8 类（缺生气、期待，探针阶段可接受）。
+- 待跑：每条 3 次信号采样，统计 `sarcasm.label`、`emotion.label`、`tone`、`ai_smell` 类型集合
+  的逐字段一致率；≥95% 临时切方案 B，<95% 走方案 A 分桶（ADR-008）。
 
 ## 已知约束
 

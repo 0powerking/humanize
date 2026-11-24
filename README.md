@@ -6,9 +6,9 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 3 完成**。五段管线、真实 client、缓存、成本、seed、ai_smell
-> 融合均已完成。规则 fixture：规则召回 10/10、clean 误报 0/7、语义召回 76.9%；融合后真实
-> 模型在 3 条 gap 上 3/3 命中、clean 仍 0/7、规则命中 0 丢失（ADR-009）。
+> 当前状态：**第 1 阶段 / Day 4 探针就绪**。管线、真实 client、缓存、成本、seed、ai_smell 融合
+> 均已完成（规则 10/10、融合 gap 3/3、clean 0 FP）。30 条稳定性探针已提交：5 场景各 6 条，
+> 反讽/非反讽 14/16，`scripts/probe_report.py` 校验通过；**尚未跑 3 次信号采样**。
 > 默认仍走 `--provider mock`；仓库只有 4 条 synthetic smoke 样例，**还没有评估集**。
 
 ---
@@ -70,6 +70,7 @@ python -m humanize run --no-cache     # 绕过磁盘缓存，强制重新调用
 python scripts/variance_check.py --sample e002_sarcasm_late --runs 3   # 3 次采样方差（花钱）
 python scripts/lexicon_report.py                                      # 规则召回/误报报告（零成本）
 python scripts/ai_smell_fusion_check.py                               # 融合验收：gap/clean/规则丢失（花钱）
+python scripts/probe_report.py                                        # 稳定性探针分布校验（零成本）
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -79,7 +80,7 @@ python scripts/ai_smell_fusion_check.py                               # 融合�
 跑测试：
 
 ```powershell
-python -m pytest        # 85 passed
+python -m pytest        # 88 passed
 python -m ruff check src tests
 ```
 
@@ -126,8 +127,9 @@ src/humanize/
   cache.py                 # 缓存键 / 信号指纹（Day 2 接上磁盘缓存）
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
+data/probe/stability_probe.jsonl  # 30 条稳定性探针（5 场景 ×6，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 85 条测试
+tests/                          # 88 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -193,7 +195,7 @@ docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字�
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | ✅ 规则 10/10、融合 gap 3/3、clean 0 FP |
-| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 待做 |
+| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 探针数据 ✅（30 条）；3 次信号采样待跑 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
 | 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |

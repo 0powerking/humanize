@@ -147,6 +147,7 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 
 **实测**：单条 e002 冷跑 0.0095 元（provider 侧 prompt cache 命中时约 0.006 元）；
 60 条 × 2 组 × 3 次采样约 3.3 元，50 元预算足够跑完评估集多轮。
+若评估启用信号层 3 次多数投票（ADR-008），总调用数约 ×2，预算约 6.6 元，仍在 50 元内。
 
 **如果错了会怎么发现**：连续跑批后把 `usage.cost_yuan` 与账单对账；偏差超过 20% 先查
 peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
@@ -199,6 +200,23 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 4. 如果分桶后 label 仍然抖，在信号层加“3 次多数投票”（Day 4），不再继续调指纹；
    投票结果写入 `RunRecord.meta` 供审计。
 
+**Day 4 探针方案（30 条，临时判断线）**：
+
+- 数据：`data/probe/stability_probe.jsonl`，30 条，5 场景各 6 条；反讽/非反讽 14/16；
+  `source=synthetic` + `probe_` 前缀 + 单独目录，**不与 `data/eval` 混**。
+- 只跑信号层 3 次，统计逐字段一致率：`sarcasm.label`、`emotion.user_emotion.label`、
+  `assistant_tone_target`、`ai_smell` 命中类型集合。
+- 判定：逐字段 ≥95% → 临时切方案 B；<95% → 方案 A 分桶；若 label 仍抖 → 信号层多数投票。
+- **95% 是 30 条样本的临时判断线，不是最终结论**：30 条的置信区间很宽，Day 8 必须用 60 条
+  评估集正式确认；报告里要同时写探针结论和样本量限制。
+- 成本：30 × 3 次 × 3 路 ≈ 270 次信号调用，约 0.15 元。
+
+**若启用多数投票（Day 4 备选）**：只对**信号层**做 3 次多数投票——3 路并行，每路跑 3 次取多数；
+**重写层仍单次**，输出抖动交给评估协议的 3 次均值 + 方差，不在运行时投票。
+调用数：每样本信号 3 路 ×3 = 9 次 + 重写 1 次 = 10 次（原 4 次）；按评估协议再叠加 3 次重写采样，
+则为 9 + 3 = 12 次 / 样本 / 条件，约为原来的 2 倍（6 次），评估总成本从 ~3.3 元升到 ~6.6 元。
+预算仍按 50 元上限留余量。
+
 **代价**：评估从“跑一次”变成“跑三次取均值”，时间 ×3；换来的是结论不依赖单次采样运气。
 
 ---
@@ -234,6 +252,16 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 
 **为什么 clean 误报是硬约束**：套路化表达频率 = 命中回复数 / 总回复数；误报直接推高这个
 指标，会让“管线降低了 AI 味”的结论失真。gap 漏检只是召回问题，可以在报告里如实写覆盖率。
+
+**v1 / v2 对比（同一 20 条 fixture，不是评估集）**：
+
+| 版本 | 规则召回 | 语义召回 | clean 误报 |
+|---|---|---|---|
+| v1 规则 only | 10/10 | 10/13（76.9%） | 0/7 |
+| v2 规则 + LLM | 10/10 | **13/13（100%）** | 0/7 |
+
+语义召回 = 规则命中的 + LLM 补的 gap；v1 的 3 条缺口正是 v2 补上的 3 条。两份报告分别由
+`scripts/lexicon_report.py` 与 `scripts/ai_smell_fusion_check.py` 生成，保留在 `data/fusion/`。
 
 **代价**：每次 ai_smell 多一次 LLM 调用；`alt_type` 只记录不参与评分，若以后要评估
 “类型冲突率”，需要单独统计 notes 里的 `alt_type_count`。
@@ -284,3 +312,31 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 
 **风险**：省略过度会让回复失去可读性，尤其在跨话题、多人群里；所以合法性检查必须是硬门禁，
 且 `unsafe_omission` 的比例要单独报，不能被总体“像人”偏好掩盖。
+
+---
+
+## 自纠记录（Self-corrections）
+
+两次都是实现后自查发现、用户未指出。记录**模式**，不只是记录修复——面试时这两条比“功能列表”
+更能说明工程判断。
+
+### 1. 2026-11-24：`include_signal_hash` 是假开关
+
+- **原设计**：`config/pipeline.yaml` 加开关，控制缓存键是否包含信号哈希。
+- **问题**：rewrite payload 里已经带完整 `signals`，即使关掉 `signal_hash`，信号一变 key 照样变。
+  写“关掉开关后改信号仍 miss”的测试时发现它无法制造任何行为差异——只是一个装饰性配置。
+- **修复**：删除字段；`make_cache_key` 保留显式 `signal_hash`，作为“将来 payload 只传信号 id”
+  的防退化声明。ADR-004 写明原因。
+- **防回归**：`test_signal_content_is_part_of_the_key`。
+- **教训**：配置项必须真实改变行为。不能改变行为的开关是负债，不是灵活性。
+
+### 2. 2026-11-24：`ai_smell.notes` 进 `rewrite_view` 污染指纹
+
+- **原设计**：`rewrite_view` 直接 dump 整个 `ai_smell`，包含 `notes`。
+- **问题**：融合后 `notes` 是模型自由文本（补了什么、alt_type、overlap），每次措辞不同；
+  它进入指纹 → 信号内容没变但缓存 key 变 → 无效 miss。
+- **修复**：`rewrite_view` 剔除 `evidence / reason / cues / notes` 四类诊断文本；
+  完整内容仍保留在 `RunRecord.signals` 供审计。ADR-004 补修订段。
+- **防回归**：`test_rewrite_view_strips_diagnostic_prose`、
+  `test_signal_fingerprint_ignores_diagnostic_prose`。
+- **教训**：自由文本不进缓存键；诊断信息与决策输入必须分层。
