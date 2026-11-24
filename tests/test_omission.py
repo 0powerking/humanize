@@ -107,3 +107,26 @@ def test_deleting_ai_smell_clause_is_not_flagged(lexicon) -> None:
     result = _check(lexicon, raw="首先，你要冷静", final="冷静点")
 
     assert result.flags == ()
+
+
+def test_commitment_weakening_is_its_own_flag(lexicon) -> None:
+    result = _check(
+        lexicon,
+        raw="改天再约",
+        final="改天呗",
+        facts=("改天再约",),
+    )
+
+    assert result.flags == ("commitment_weakened",)
+    assert "commitment_weakened: 改天再约" in result.details
+
+
+def test_commitment_preserved_is_clean(lexicon) -> None:
+    result = _check(
+        lexicon,
+        raw="改天再约",
+        final="改天再约",
+        facts=("改天再约",),
+    )
+
+    assert result.flags == ()

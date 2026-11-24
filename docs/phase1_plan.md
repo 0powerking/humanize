@@ -23,7 +23,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | ✅ Step 1–4 全部完成 |
-| 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
+| 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | ✅ 敏感桩 + 评估聚合（压缩完成） |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
 | 9 | 盲评表 + 人工评分 + 统计 | 四指标 + CI | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：149 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点
+- `tests/`：160 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合
 
 ## Day 2 下半段进度
 
@@ -244,6 +244,20 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
   - 2 条 `partial_omission`（e004/probe_001 的“周六下午→周六”只记录不阻断）。
 - ratio 未调：e001/e003 仍触发 `rewrite_ratio_over_limit`，留给 Day 8 与保留率一起看。
 - 测试：149 passed（无 skip）。
+
+## Day 6：敏感桩 + 评估聚合（已完成）
+
+- `src/humanize/sensitive.py`：手机号 / URL / 配置关键词桩，分类 `contact_info` / `keyword`，
+  `block_on_hit` 可阻断；扫描合并后的 `final_text`。
+- `src/humanize/evaluate.py` + `scripts/eval_summary.py`：从 `RunRecord` 聚合
+  - 链路（runs / degraded / cache_hits / cost）；
+  - 节奏（`rewrite.messages` 的条数、长度 P50/P95、>35 字比例、拆分率）；
+  - 保留率（精确 / 覆盖率）、omission / commitment、治理命中、work 扩写；
+  - 旧 schema 记录跳过，不静默混算。
+- 口径：敏感读 `final_text`，长度/分条读 `rewrite.messages`；**不混**。
+- `commitment_weakened` 独立标记；work `compression < -0.3` 单独统计。
+- 评估聚合实测：`data/runs` 里 5 条新 schema 记录可汇总，45 条旧记录被跳过。
+- 测试：160 passed。
 
 ## 已知约束
 

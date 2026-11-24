@@ -497,7 +497,30 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 
 ---
 
-## Step 4 前置口径：ratio 和 kept_facts 一起看
+## ADR-014 Day 6：敏感桩与评估层聚合
+
+**背景**：Day 6 压缩为“敏感词桩 + 治理层输出接入评估层”，残留逐条扫和审计已在 Step 3 完成。
+
+**决策**：
+1. `src/humanize/sensitive.py`：`SensitiveDetector` 只做桩——手机号、URL、配置关键词；
+   分类 `contact_info` / `keyword`，`block_on_hit` 控制是否阻断。
+2. **敏感扫描读合并后的 `final_text`**（跨消息拼接也可能泄漏），
+   **长度/分条指标读 `rewrite.messages`**；两者不混。长度读 final_text 会把
+   “2 条 × 10 字”算成“1 条 × 21 字”，分条指标会失真。
+3. `src/humanize/evaluate.py` + `scripts/eval_summary.py`：从 `RunRecord` 聚合
+   链路、节奏、保留率、omission/commitment、治理命中、work 扩写；旧 schema 记录跳过，
+   不静默混算。
+4. 保留率主指标用 **覆盖率 0.7**，精确子串作为严格下界；人工语义保留只判
+   覆盖率下剩余 3 条，不全量。
+5. `commitment_weakened` 作为独立 risk flag：承诺类 `kept_facts`（改天/再约/下次/一定/
+   保证等）在 final_text 里覆盖率 <0.7 时触发，不和事实丢失合并。
+6. work 场景 `compression < -0.3` 视为扩写违规，Day 8 单独统计，不和 casual 压缩率混。
+7. `unsafe_omission` 的 Day 8 报告必须写：“规则在 36 条真实输出上触发 0 次，但 concrete span
+   观测到 10 个可判定机会，说明规则有机会触发；检出能力由单元测试保证。”
+
+**Day 8 待办**：人工语义保留 3 条、`commitment_weakened` 统计、work 扩写观察、ratio 调优。
+
+---
 
 - `rewrite_ratio` 高**不等于**信息丢失。删掉“首先/其次/从另一个角度”这类 AI 味套话，
   ratio 0.86 是有效压缩；只有删掉 `kept_facts` 实体或关键限定（“周六下午→周六”、

@@ -51,7 +51,6 @@ from .schemas import (
     SarcasmLabel,
     SarcasmSignal,
     SarcasmTarget,
-    SensitiveResult,
     SignalBundle,
     SignalMeta,
     Timing,
@@ -60,6 +59,7 @@ from .schemas import (
     Versions,
     recompute_counts,
 )
+from .sensitive import SensitiveDetector
 from .voting import vote_ai_smell, vote_emotion, vote_sarcasm
 
 _PHONE = r"(?<!\d)1[3-9]\d{9}(?!\d)"
@@ -89,6 +89,9 @@ class HumanizePipeline:
         self.personas = personas
         self.lexicon = lexicon
         self.client = client
+        self.sensitive = SensitiveDetector(
+            config.govern.sensitive_stub, config.govern.block_on_hit
+        )
         self._config_hash = stable_hash(config)
 
     # -- public ------------------------------------------------------------ #
@@ -522,31 +525,14 @@ class HumanizePipeline:
             note=residue_note,
         )
 
-        categories: list[str] = []
-        if any(
-            _contains(message, _PHONE) or _contains(message, _URL)
-            for message in rewrite.messages
-        ):
-            categories.append("contact_info")
-        if any(
-            word in message
-            for message in rewrite.messages
-            for word in policy.sensitive_stub
-        ):
-            categories.append("keyword")
-        blocked = bool(categories) and policy.block_on_hit
-        sensitive = SensitiveResult(
-            blocked=blocked,
-            categories=tuple(dict.fromkeys(categories)),
-            action="block" if blocked else "pass",
-        )
+        # Sensitive scanning reads the merged final_text: a phone number split
+        # across messages is still a leak. Rhythm metrics read messages instead.
+        sensitive = self.sensitive.result("\n".join(rewrite.messages))
+        blocked = sensitive.blocked
 
         omission_flags: tuple[str, ...] = ()
         omission_details: tuple[str, ...] = ()
-        # Formal scenes are governed by the prompt rule; the rule-based check is
-        # skipped and their omission rate is tracked as a prompt-quality metric
-        # in the Step 4 regression instead (ADR-012).
-        if policy.omission_check and inp.context.scene.value not in {"work", "boundary"}:
+        if policy.omission_check:
             context_texts = tuple(
                 turn.content for turn in inp.context.turns[-policy.omission_context_turns :]
             )
@@ -556,6 +542,10 @@ class HumanizePipeline:
                 kept_facts=rewrite.kept_facts,
                 context_texts=context_texts,
                 lexicon=self.lexicon,
+                # Formal scenes skip the omission rule (prompt forbids it; rate is
+                # tracked as a prompt-quality metric), but commitment softening is
+                # still checked everywhere.
+                enforce_omission=inp.context.scene.value not in {"work", "boundary"},
             )
             omission_flags = omission.flags
             omission_details = omission.details

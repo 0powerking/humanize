@@ -26,6 +26,9 @@ _CONCRETE_RE = re.compile(
 )
 
 _COVERAGE = 0.8
+_COMMITMENT_RE = re.compile(
+    r"改天|再约|下次|回头|一定|保证|答应|说好|约好|补你|请你|等你"
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,7 @@ def check_omissions(
     kept_facts: tuple[str, ...],
     context_texts: tuple[str, ...],
     lexicon,
+    enforce_omission: bool = True,
 ) -> OmissionCheck:
     # ``lexicon`` is accepted for interface symmetry; concrete spans are not
     # AI-smell phrases, so no lexicon filtering is needed here.
@@ -90,11 +94,18 @@ def check_omissions(
     context = "\n".join(context_texts)
     unsafe: list[str] = []
     partial: list[str] = []
+    commitments: list[str] = []
     concrete_facts = [fact.strip() for fact in kept_facts if _is_concrete(fact)]
 
-    for fact in concrete_facts:
-        cleaned = fact
+    for fact in kept_facts:
+        cleaned = fact.strip()
         if not cleaned:
+            continue
+        if _COMMITMENT_RE.search(cleaned) and not fact_preserved(cleaned, final_text):
+            # A softened promise is not a fact omission; keep the categories apart.
+            commitments.append(cleaned)
+            continue
+        if not enforce_omission or not _is_concrete(cleaned):
             continue
         if cleaned in final_text:
             continue
@@ -105,25 +116,29 @@ def check_omissions(
             continue
         unsafe.append(cleaned)
 
-    for span in _concrete_spans(raw_reply):
-        # A concrete fact is already judged above; do not report its sub-spans
-        # twice (e.g. 周六/下午 inside kept_fact 周六下午).
-        if any(span in fact for fact in concrete_facts):
-            continue
-        if span in final_text:
-            continue
-        if _preserved(span, context):
-            continue
-        unsafe.append(span)
+    if enforce_omission:
+        for span in _concrete_spans(raw_reply):
+            # A concrete fact is already judged above; do not report its sub-spans
+            # twice (e.g. 周六/下午 inside kept_fact 周六下午).
+            if any(span in fact for fact in concrete_facts):
+                continue
+            if span in final_text:
+                continue
+            if _preserved(span, context):
+                continue
+            unsafe.append(span)
 
     flags: list[str] = []
     if unsafe:
         flags.append("unsafe_omission")
     if partial:
         flags.append("partial_omission")
+    if commitments:
+        flags.append("commitment_weakened")
 
     details = tuple(
         [f"unsafe_omission: {phrase}" for phrase in unsafe]
         + [f"partial_omission: {phrase}" for phrase in partial]
+        + [f"commitment_weakened: {phrase}" for phrase in commitments]
     )
     return OmissionCheck(flags=tuple(flags), details=details)
