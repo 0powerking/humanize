@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：106 条测试，覆盖契约、缓存键分桶与失效、端到端重调、降级、ratio 审计、成本、seed、融合、投票
+- `tests/`：124 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票
 
 ## Day 2 下半段进度
 

@@ -82,7 +82,7 @@ python scripts/probe_report.py                                        # 稳定�
 跑测试：
 
 ```powershell
-python -m pytest        # 106 passed
+python -m pytest        # 124 passed
 python -m ruff check src tests
 ```
 
@@ -131,7 +131,7 @@ src/humanize/
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 106 条测试
+tests/                          # 124 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
