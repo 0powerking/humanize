@@ -1,0 +1,83 @@
+# AI 味规则词典 v1。
+#
+# 这份词典有三处用途，保证"同一个口径"：
+#   1. Day 1 mock 信号层用它产出 ai_smell.hits（占位，Day 3 换成 LLM+规则融合）
+#   2. 重写 prompt 把它作为"必须消掉的表达"清单注入
+#   3. 治理层用它在重写结果上做残留检测（residue）
+#
+# 打分口径：score = min(1.0, sum(severity) / 8)。
+# severity 1 = 轻微（单个词、口语里也常见），3 = 强套路。
+# 词典是 v1，允许误伤；后续用评估集里的命中样本调，不要凭感觉加词。
+
+version: "lex.v1"
+
+patterns:
+  - id: hedge_leading
+    type: hedge
+    severity: 1
+    regex: '^(?:其实|说实话|老实说|总的来说)[，,]\s*'
+
+  - id: hedge_queshi
+    type: hedge
+    severity: 1
+    regex: '确实'
+
+  - id: hedge_zongzhi
+    type: hedge
+    severity: 2
+    regex: '总之'
+
+  - id: enum_shouxian
+    type: enumeration
+    severity: 2
+    regex: '首先[，,：:]?'
+
+  - id: enum_qici
+    type: enumeration
+    severity: 2
+    regex: '其次[，,：:]?'
+
+  - id: enum_zuihou
+    type: enumeration
+    severity: 2
+    regex: '最后[，,：:]?'
+
+  - id: not_x_but_y
+    type: not_x_but_y
+    severity: 3
+    regex: '不是[^。！？\n]{1,30}?而是'
+
+  - id: golden_quote_dou
+    type: golden_quote
+    severity: 2
+    regex: '(?:每一次|任何)[^。！？\n]{0,20}?都(?:是|值得)'
+
+  - id: golden_quote_you
+    type: golden_quote
+    severity: 2
+    regex: '(?:相信你|你一定可以|你值得|未来可期)'
+
+  - id: service_tone_1
+    type: service_tone
+    severity: 2
+    regex: '(?:很高兴为您|为您服务|理解你[的]?|理解您)'
+
+  - id: service_tone_2
+    type: service_tone
+    severity: 1
+    regex: '(?:哦亲|亲[，,~]|宝子)'
+
+  - id: service_tone_3
+    type: service_tone
+    severity: 1
+    regex: '不要(?:灰心|难过|伤心)'
+
+  - id: over_explain_1
+    type: over_explain
+    severity: 1
+    regex: '(?:从另一个角度|换个角度|客观来说|不可否认)'
+
+  - id: parallelism_jiyou
+    type: parallelism
+    severity: 2
+    regex: '既[^，。]{1,12}又[^，。]{1,12}'

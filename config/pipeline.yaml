@@ -1,0 +1,74 @@
+# 管线总配置（唯一事实来源）。
+# 改动 prompt_versions / thresholds / models 都会改变 config_hash，
+# 进而使缓存失效 —— 这是有意为之，见 docs/decisions.md ADR-004。
+
+schema_version: "1.0"
+
+# Day 1 默认 mock（不联网、不花钱）；Day 2 切 deepseek。
+# 可用环境变量 HUMANIZE_PROVIDER 覆盖。
+provider: mock
+base_url: "https://api.deepseek.com"
+api_key_env: DEEPSEEK_API_KEY
+
+api:
+  timeout_s: 60          # 单次请求超时；慢网调大
+  max_retries: 2         # 仅对 429/5xx/超时重试，4xx 直接失败
+  backoff_base_s: 1.0    # 指数退避基数：1s, 2s
+  json_mode: true        # 要求 response_format=json_object
+
+models:
+  signal:
+    model: deepseek-chat
+    temperature: 0.0      # 判定类任务不采样，保证可复现
+  rewrite:
+    model: deepseek-chat
+    temperature: 0.9      # 重写需要多样性，但会被 seed 固定
+
+# 每个模块独立版本号；prompt 改动必须同步 bump，否则缓存会错误命中。
+prompt_versions:
+  signal.sarcasm: sig.sarcasm.v1
+  signal.emotion: sig.emotion.v1
+  signal.ai_smell: sig.ai_smell.v1
+  rewrite: rw.v1
+
+thresholds:
+  # ai_smell.score 低于此值时允许"几乎不改"（rewrite gate）。
+  # 0.25 ≈ 只命中 1 个 severity=2 的套路。
+  rewrite_gate_ai_smell: 0.25
+  # 单条回复允许改动字符比例的上限；超过只记录 risk_flag，不截断。
+  max_rewrite_ratio: 0.6
+  # 重写结果短于该长度视为可疑（可能是把内容删空了）。
+  min_rewrite_chars: 4
+  # 信号层失败时的中性兜底；ai_smell 故意取 0.5（高于 gate），
+  # 让管线在"不知道脏不脏"时倾向重写而不是放行。见 ADR-003。
+  signal_failure_default_ai_smell: 0.5
+
+govern:
+  # 第一阶段只做"检测 + 记录"，命中后不自动局部重写（1.5 阶段再做）。
+  local_rewrite_enabled: false
+  # 敏感词桩：只记录分类，不拦截；接 IM 前替换为正式词库并打开 block_on_hit。
+  block_on_hit: false
+  sensitive_stub:
+    - 加微信
+    - 加V
+    - 代开发票
+    - 刷单
+    - 博彩
+    - 裸聊
+
+cache:
+  enabled: true
+  dir: data/cache
+  # 重写阶段缓存键必须包含信号指纹，避免"原始回复没变、信号变了"时错误命中。
+  # 不要关闭；关闭后只能用于纯文本级缓存实验。
+  include_signal_hash: true
+
+cost:
+  budget_yuan: 50.0
+  # 按 DeepSeek 官网实际价格填写（元 / 百万 token）。留 0 表示暂不估算。
+  price_per_1m_prompt_yuan: 0.0
+  price_per_1m_completion_yuan: 0.0
+
+paths:
+  prompts_dir: prompts
+  runs_dir: data/runs

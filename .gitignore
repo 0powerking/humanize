@@ -1,0 +1,23 @@
+# environment
+.venv/
+.env
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# runtime artifacts (regenerable, may contain chat text -> never commit)
+data/runs/
+data/cache/
+data/eval/annotations/*.local.csv
+
+# editors / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

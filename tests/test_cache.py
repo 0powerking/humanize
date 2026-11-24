@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from humanize.cache import make_cache_key, signal_fingerprint
+
+PAYLOAD = {"raw_reply": "在吗", "scene": "casual"}
+
+
+def _key(**overrides):
+    kwargs = {
+        "stage": "rewrite",
+        "model": "deepseek-chat",
+        "prompt_version": "rw.v1",
+        "payload": PAYLOAD,
+        "signal_hash": "abc123",
+    }
+    kwargs.update(overrides)
+    return make_cache_key(**kwargs)
+
+
+def test_key_is_deterministic_and_order_insensitive() -> None:
+    assert _key() == _key()
+    shuffled = {"scene": "casual", "raw_reply": "在吗"}
+    assert _key(payload=shuffled) == _key()
+
+
+def test_prompt_version_bump_invalidates_key() -> None:
+    # Acceptance criterion requested on Day 1: bump prompt version -> cache key changes.
+    assert _key() != _key(prompt_version="rw.v2")
+
+
+def test_signal_change_invalidates_key() -> None:
+    assert _key() != _key(signal_hash="def456")
+
+
+def test_signal_fingerprint_ignores_latency(pipeline, sample) -> None:
+    record = pipeline.run(sample("e001_overwork_advice"))
+    signals = record.signals
+
+    slower = signals.model_copy(
+        update={"meta": signals.meta.model_copy(update={"latency_ms": 9999})}
+    )
+    assert signal_fingerprint(signals) == signal_fingerprint(slower)
+
+
+def test_signal_fingerprint_tracks_signal_content(pipeline, sample) -> None:
+    record = pipeline.run(sample("e001_overwork_advice"))
+    signals = record.signals
+
+    different = signals.model_copy(
+        update={
+            "ai_smell": signals.ai_smell.model_copy(update={"score": 0.01}),
+        }
+    )
+    assert signal_fingerprint(signals) != signal_fingerprint(different)
