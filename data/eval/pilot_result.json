@@ -1,0 +1,14 @@
+{
+  "pilot_id": "day7_pilot_v1",
+  "date": "2026-11-24",
+  "cases": 10,
+  "assessment": "qualitative_pass",
+  "close_to_expected": 10,
+  "blocking_ambiguities": 0,
+  "numeric_annotations": false,
+  "timing_measured": false,
+  "kappa_measured": false,
+  "double_annotation": "not_run",
+  "spec_version": "annotation_guide_v1",
+  "notes": "10/10 rewrites close to expected per the annotator; no blocking ambiguity raised; pilot not used as a metric report."
+}

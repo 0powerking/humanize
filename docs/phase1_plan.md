@@ -24,7 +24,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | ✅ Step 1–4 全部完成 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | ✅ 敏感桩 + 评估聚合（压缩完成） |
-| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | ✅ pilot + 规范 v1；标注执行/扩 60 待做 |
+| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | ✅ pilot 定性通过；规范 v1 定稿；计时/κ 未测 |
 | 8a | 建 60 条正式集（≥18 真实）+ 标注执行 | 有效样本 + N/M 记录 | 待做（Day 8 第一段） |
 | 8b | 批量跑 + 自动指标 + `report.md` | 四指标 + 双口径保留率 + commitment runs/items | 待做（Day 8 第二段） |
 | 9 | 盲评表 + 人工评分 + 统计 | 四指标 + CI | 待做 |
@@ -57,7 +57,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：167 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合、pilot 结构
+- `tests/`：168 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合、pilot 结构
 
 ## Day 2 下半段进度
 
@@ -274,7 +274,10 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 - Day 8 正式集至少 30% 真实脱敏样本；报告写“有效 N 条（schema 1.2）+ 跳过 M 条旧 schema”。
 - `commitment_weakened` 改为逐条承诺：risk_flags 每条一项 `<fact>:<coverage>`，
   统计 `runs` 与 `items` 两个数。
-- `scripts/pilot_check.py`：结构/模板校验通过；测试 167 passed。
+- `scripts/pilot_check.py`：结构/模板校验通过；测试 168 passed。
+- **结果（2026-11-24）**：10/10 重写“接近预期”，无阻断性歧义，规范 v1 定稿；
+  **未填逐字段数值、未测 core 耗时、未测 κ**；详见 `docs/pilot_result_day7.md`。
+- Day 8a 扩 60 条前先取 5 条做计时校准，只取 core 中位数。
 
 ## Day 8 拆分与时间预算
 
@@ -282,6 +285,7 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 **拆成两段，不压成一天**：
 
 - **Day 8a：建集 + 标注**
+  - 先取 **5 条**做计时校准（warmup/core/fatigue，只取 core 中位数），再估 60 条工作量；
   - 从 `data/eval/real_candidates.jsonl` 选 ≥18 条真实脱敏样本（`real_candidates_check.py` 校验），
     加 42 条 synthetic/pilot，凑 60 条；
   - 按 `docs/annotation_guide_v1.md` 执行标注；计时只取 core 段；

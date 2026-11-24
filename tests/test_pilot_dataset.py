@@ -10,6 +10,7 @@ PILOT = ROOT / "data/eval/pilot_10.jsonl"
 TEMPLATE = ROOT / "data/eval/annotations/pilot_annotations_template.csv"
 TEMPLATE_B = ROOT / "data/eval/annotations/pilot_annotations_template_B.csv"
 TIMING = ROOT / "data/eval/annotations/pilot_timing_template.csv"
+RESULT = ROOT / "data/eval/pilot_result.json"
 
 
 def _cases() -> list[dict]:
@@ -88,3 +89,13 @@ def test_timing_template_segments() -> None:
     assert segments[0] == "warmup"
     assert segments[-1] == "fatigue"
     assert segments.count("core") == 8
+
+
+def test_pilot_result_keeps_untested_fields_explicit() -> None:
+    result = json.loads(RESULT.read_text(encoding="utf-8"))
+
+    assert result["assessment"] == "qualitative_pass"
+    assert result["close_to_expected"] == 10
+    assert result["numeric_annotations"] is False
+    assert result["timing_measured"] is False
+    assert result["kappa_measured"] is False

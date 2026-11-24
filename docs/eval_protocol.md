@@ -103,7 +103,9 @@ Day 5 起新增 `rhythm_profile: short_burst | single_msg | long_explain`，用�
   （0.0–1.0，步长 0.1）、`persona_consistency` 1–5、`rhythm_profile`、
   `omission_naturalness` 1–3（无省略填 NA）、`ab_preference`（pipe/baseline/tie/NA）。
 - **pilot 的唯一产出**：标注规范 v1 定稿、标注耗时估计、歧义字段清单；**不产出指标**，
-  10 条的数字不能写进结论。
+  10 条的数字不能写进结论。Day 7 结果：10/10 重写“接近预期”，无阻断性歧义，规范 v1 定稿；
+  但**未填逐字段数值、未测 core 耗时、未测 κ**，不能写成“一致性高/耗时 X 分钟”。
+  Day 8a 扩 60 条前先做 **5 条计时校准**（只取 core 中位数）。
 - 计时：`pilot_timing_template.csv`；第 1 条 warmup、最后 1–2 条 fatigue，**只取 core 段**
   的中位数/范围/样本数。歧义当场记在 `docs/annotation_guide_v1.md` 末尾，不要标完回忆。
 - 双人：A 标全部 10 条，B 标 5 条重叠算 κ；B 模板留空/没人时注明“单标注者，无 κ”，

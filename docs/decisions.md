@@ -539,6 +539,10 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 6. `commitment_weakened` 逐条承诺判断：`risk_flags` 每条 `commitment_weakened:<fact>:<coverage>`；
    统计 `commitment_weakened_runs`（回复数）与 `commitment_weakened_items`（条目数）两个数。
 
+**结果（2026-11-24）**：10/10 重写“接近预期”，无阻断性歧义，规范 v1 定稿；
+但**未填逐字段数值、未测 core 耗时、未测 κ**，不能写成 pilot 指标；Day 8a 先做 5 条计时校准。
+详见 `docs/pilot_result_day7.md`。
+
 **Day 8 待办**：人工语义保留 3 条、commitment runs/items、work 扩写、双口径保留率、ratio 调优。
 
 ---

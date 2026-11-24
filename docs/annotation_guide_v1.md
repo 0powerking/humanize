@@ -1,10 +1,17 @@
-# 标注规范 v1（pilot 用）
+# 标注规范 v1（定稿）
 
-状态：Day 7 pilot 版。**pilot 的唯一产出是“规范能否落地”，不产出指标。**
-10 条 pilot 的数字没有统计意义，不得写进任何结论。
+状态：**v1 定稿**（2026-11-24，Day 7 pilot 定性通过）。规范本身不再等 pilot 修改；
+pilot 不产出指标，10 条重写的“接近预期”不能换算成准确率/胜率。
 
 数据：`data/eval/pilot_10.jsonl`（5 场景 × 2 条，反讽/非反讽 5/5，全部 `source=synthetic`）
-标注表：`data/eval/annotations/pilot_annotations_template.csv`
+标注表：`data/eval/annotations/pilot_annotations_template.csv`（A）/ `..._B.csv`（B）
+
+## 0. Pilot 结论与未测项
+
+- 10/10 条重写“接近预期”，未提出需要改规范的阻断性歧义；规范 v1 定稿。
+- **未测**：逐字段数值、core 耗时、双人 κ、persona/omission 分数分布。
+- 原因：本轮是定性走查，不是计时独立盲标；详见 `docs/pilot_result_day7.md`。
+- Day 8a 扩 60 条前，先用 **5 条**做计时校准（只取 core 中位数），再估一天能否标完。
 
 ---
 

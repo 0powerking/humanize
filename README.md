@@ -6,11 +6,12 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 7 pilot 就绪**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
-> 稳定性探针、messages/rhythm/省略、kept_facts 锚点、Day 5 回归、敏感桩与评估聚合均已完成。
-> Day 7 产出 10 条 pilot（5 场景 × 2，反讽/非反讽 5/5）、标注规范 v1、标注模板与校验脚本；
-> **pilot 只验证规范，不产出指标**。`commitment_weakened` 改为逐条承诺记录，统计 runs/items 两个数。
-> 下一步：标注执行（A 全 10 条，B 5 条重叠算 κ）；Day 8 扩到 60 条且 ≥30% 真实脱敏。
+> 当前状态：**第 1 阶段 / Day 7 完成（pilot 定性通过）**。管线、真实 client、缓存、成本、seed、
+> ai_smell 融合、稳定性探针、messages/rhythm/省略、kept_facts 锚点、Day 5 回归、敏感桩与评估聚合
+> 均已完成。Day 7 的 10 条 pilot 重写“接近预期”，无阻断性歧义，**标注规范 v1 定稿**；
+> 但未填逐字段数值、未测 core 耗时、未测 κ，Day 8a 先做 5 条计时校准。
+> `commitment_weakened` 逐条承诺记录，统计 runs/items。
+> 下一步：真实候选每天 3–5 条；Day 8a 建集 + 标注，Day 8b 评估 + 报告。
 
 ---
 
@@ -86,7 +87,7 @@ python scripts/real_candidates_check.py                               # 真实�
 跑测试：
 
 ```powershell
-python -m pytest        # 167 passed
+python -m pytest        # 168 passed
 python -m ruff check src tests
 ```
 
@@ -138,8 +139,9 @@ data/eval/real_candidates.jsonl # 真实脱敏候选，目标 18 条（每天 3�
 data/eval/annotations/          # A/B 标注模板、计时模板（10 条，5 条重叠）
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 167 条测试
-docs/annotation_guide_v1.md     # Day 7 标注规范 v1（字段/流程/耗时/歧义）
+tests/                          # 168 条测试
+docs/annotation_guide_v1.md     # 标注规范 v1 定稿（字段/流程/计时/歧义）
+docs/pilot_result_day7.md       # Day 7 pilot 定性结果与未测项
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -210,7 +212,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | ✅ 探针两轮 + 方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate | ✅ Step 1–4（messages / rhythm / 省略 / kept_facts / 回归） |
 | 6 | 治理层最小版（残留 + 审计） | ✅ 敏感桩 + 评估聚合（压缩完成） |
-| 7–9 | pilot / 8a 建集+标注 / 8b 评估+报告 / 盲评 | pilot + 规范 ✅；8a/8b 待做 |
+| 7–9 | pilot / 8a 建集+标注 / 8b 评估+报告 / 盲评 | pilot 定性通过 + 规范 v1 ✅；8a/8b 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 待做 |
 
 设计取舍见 [docs/decisions.md](docs/decisions.md)，接口契约见
