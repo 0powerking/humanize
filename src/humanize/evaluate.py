@@ -35,7 +35,7 @@ def summarize(records: Iterable[RunRecord]) -> dict:
     split_scene_replies = 0
     split_scene_multi = 0
     facts_total = facts_exact = facts_coverage = 0
-    unsafe = partial = commitment = 0
+    unsafe = partial = commitment_runs = commitment_items = 0
     residue_runs = residue_hits = sensitive_runs = blocked_runs = 0
     sensitive_categories: Counter[str] = Counter()
     scenes: Counter[str] = Counter()
@@ -67,7 +67,13 @@ def summarize(records: Iterable[RunRecord]) -> dict:
         flags = set(record.rewrite.risk_flags)
         unsafe += int("unsafe_omission" in flags)
         partial += int("partial_omission" in flags)
-        commitment += int("commitment_weakened" in flags)
+        commitment_flags = [
+            flag
+            for flag in record.rewrite.risk_flags
+            if flag.startswith("commitment_weakened:")
+        ]
+        commitment_runs += int(bool(commitment_flags))
+        commitment_items += len(commitment_flags)
 
         if record.govern.residue.hits:
             residue_runs += 1
@@ -119,7 +125,8 @@ def summarize(records: Iterable[RunRecord]) -> dict:
         "omission": {
             "unsafe_samples": unsafe,
             "partial_samples": partial,
-            "commitment_weakened_samples": commitment,
+            "commitment_weakened_runs": commitment_runs,
+            "commitment_weakened_items": commitment_items,
         },
         "governance": {
             "residue_runs": residue_runs,
@@ -167,7 +174,9 @@ def format_markdown(summary: dict) -> str:
         "",
         f"- unsafe samples: {summary['omission']['unsafe_samples']}",
         f"- partial samples: {summary['omission']['partial_samples']}",
-        f"- commitment weakened: {summary['omission']['commitment_weakened_samples']}",
+        f"- commitment weakened runs/items: "
+        f"{summary['omission']['commitment_weakened_runs']}/"
+        f"{summary['omission']['commitment_weakened_items']}",
         "",
         "## Governance",
         "",

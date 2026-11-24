@@ -513,7 +513,8 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 4. 保留率主指标用 **覆盖率 0.7**，精确子串作为严格下界；人工语义保留只判
    覆盖率下剩余 3 条，不全量。
 5. `commitment_weakened` 作为独立 risk flag：承诺类 `kept_facts`（改天/再约/下次/一定/
-   保证等）在 final_text 里覆盖率 <0.7 时触发，不和事实丢失合并。
+   保证等）在 final_text 里覆盖率 <0.7 时触发；Day 7 起改为逐条记录
+   `commitment_weakened:<fact>:<coverage>`，统计 runs/items 两个数。
 6. work 场景 `compression < -0.3` 视为扩写违规，Day 8 单独统计，不和 casual 压缩率混。
 7. `unsafe_omission` 的 Day 8 报告必须写：“规则在 36 条真实输出上触发 0 次，但 concrete span
    观测到 10 个可判定机会，说明规则有机会触发；检出能力由单元测试保证。”
@@ -521,6 +522,28 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 **Day 8 待办**：人工语义保留 3 条、`commitment_weakened` 统计、work 扩写观察、ratio 调优。
 
 ---
+
+## ADR-015 Day 7：pilot 只定规范，不定指标
+
+**背景**：Day 7 的 10 条 pilot 没有统计意义。如果把它当“指标报告”，会重演单轮探针
+93.3%↔96.7% 的误判。
+
+**决策**：
+1. pilot 唯一产出：**标注规范 v1 定稿、标注耗时估计、歧义字段清单**；不产出指标。
+2. 10 条覆盖 5 场景 × 2，反讽/非反讽 5/5；字段含 `user_sarcasm` 三态 + evidence、
+   `user_emotion_label/intensity`、`persona_consistency` 1–5、`rhythm_profile`、
+   `omission_naturalness` 1–3、`ab_preference`。
+3. 双人：A 全 10 条，B 标 5 条重叠算 κ；只有一人时注明单标注者，Day 8 不得写双人 κ。
+4. Day 8 正式集至少 30% 真实脱敏样本；否则“像人”结论说服力打折。
+5. 报告写“有效样本 N 条（schema 1.2）+ 跳过 M 条旧 schema”，不能只写 N。
+6. `commitment_weakened` 逐条承诺判断：`risk_flags` 每条 `commitment_weakened:<fact>:<coverage>`；
+   统计 `commitment_weakened_runs`（回复数）与 `commitment_weakened_items`（条目数）两个数。
+
+**Day 8 待办**：人工语义保留 3 条、commitment runs/items、work 扩写、双口径保留率、ratio 调优。
+
+---
+
+## Step 4 前置口径：ratio 和 kept_facts 一起看
 
 - `rewrite_ratio` 高**不等于**信息丢失。删掉“首先/其次/从另一个角度”这类 AI 味套话，
   ratio 0.86 是有效压缩；只有删掉 `kept_facts` 实体或关键限定（“周六下午→周六”、
@@ -540,7 +563,7 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 超过 20 字。当前 `RewriteOutput` 只有单个 `text`，等于假设"一条输入对应一条输出"，
 结果仍然是"消息块"而不是"聊天"。
 
-**状态：Step 1 / Step 2 / Step 3 已实施（messages + rhythm + 省略检查）；Step 4 回归待做。**
+**状态：Step 1–4 已完成（messages + rhythm + 省略检查 + kept_facts + 回归）。**
 
 1. ✅ `RewriteOutput` 改为 `messages`（1–4 条）；`message_count`、`max_msg_chars` 重算；
    治理层用 `\n` 合并并写审计（ADR-010）。

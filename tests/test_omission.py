@@ -117,8 +117,22 @@ def test_commitment_weakening_is_its_own_flag(lexicon) -> None:
         facts=("改天再约",),
     )
 
-    assert result.flags == ("commitment_weakened",)
-    assert "commitment_weakened: 改天再约" in result.details
+    assert len(result.flags) == 1
+    assert result.flags[0].startswith("commitment_weakened:改天再约:")
+    assert "coverage=" in result.details[0]
+
+
+def test_commitment_items_are_counted_per_promise(lexicon) -> None:
+    result = _check(
+        lexicon,
+        raw="改天再约，下次一定",
+        final="改天再约",
+        facts=("改天再约", "下次一定"),
+    )
+
+    assert len(result.flags) == 1
+    assert result.flags[0].startswith("commitment_weakened:下次一定:")
+    assert len(result.details) == 1
 
 
 def test_commitment_preserved_is_clean(lexicon) -> None:

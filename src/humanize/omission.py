@@ -78,6 +78,10 @@ def concrete_spans(text: str) -> list[str]:
     return _concrete_spans(text)
 
 
+def coverage_ratio(phrase: str, text: str) -> float:
+    return round(_coverage(phrase, text), 3)
+
+
 def check_omissions(
     *,
     raw_reply: str,
@@ -94,16 +98,18 @@ def check_omissions(
     context = "\n".join(context_texts)
     unsafe: list[str] = []
     partial: list[str] = []
-    commitments: list[str] = []
+    commitments: list[tuple[str, float]] = []
     concrete_facts = [fact.strip() for fact in kept_facts if _is_concrete(fact)]
 
     for fact in kept_facts:
         cleaned = fact.strip()
         if not cleaned:
             continue
-        if _COMMITMENT_RE.search(cleaned) and not fact_preserved(cleaned, final_text):
-            # A softened promise is not a fact omission; keep the categories apart.
-            commitments.append(cleaned)
+        if _COMMITMENT_RE.search(cleaned):
+            coverage = coverage_ratio(cleaned, final_text)
+            if coverage < 0.7:
+                # Per-item: one flag per weakened promise, with its coverage.
+                commitments.append((cleaned, coverage))
             continue
         if not enforce_omission or not _is_concrete(cleaned):
             continue
@@ -133,12 +139,17 @@ def check_omissions(
         flags.append("unsafe_omission")
     if partial:
         flags.append("partial_omission")
-    if commitments:
-        flags.append("commitment_weakened")
+    flags.extend(
+        f"commitment_weakened:{phrase}:{coverage:.3f}"
+        for phrase, coverage in commitments
+    )
 
     details = tuple(
         [f"unsafe_omission: {phrase}" for phrase in unsafe]
         + [f"partial_omission: {phrase}" for phrase in partial]
-        + [f"commitment_weakened: {phrase}" for phrase in commitments]
+        + [
+            f"commitment_weakened: {phrase} (coverage={coverage:.3f})"
+            for phrase, coverage in commitments
+        ]
     )
     return OmissionCheck(flags=tuple(flags), details=details)

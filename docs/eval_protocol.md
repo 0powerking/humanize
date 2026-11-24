@@ -94,6 +94,19 @@ Day 5 起新增 `rhythm_profile: short_burst | single_msg | long_explain`，用�
 > （时间/日期/数字/金额）。主语省略、指代省略、重复信息省略不进入规则检查，由 prompt 规则
 > 和人工「省略自然度」兜底。“规则 clean”不等于“所有省略都安全”。
 
+### 3.6 Pilot（Day 7）
+
+- 数据：`data/eval/pilot_10.jsonl`，5 场景 × 2 条，反讽/非反讽 5/5，全部 `source=synthetic`。
+- 标注表：`data/eval/annotations/pilot_annotations_template.csv`，字段至少包含
+  `user_sarcasm`（三态 + evidence）、`user_emotion_label` + `user_emotion_intensity`
+  （0.0–1.0，步长 0.1）、`persona_consistency` 1–5、`rhythm_profile`、
+  `omission_naturalness` 1–3（无省略填 NA）、`ab_preference`（pipe/baseline/tie/NA）。
+- **pilot 的唯一产出**：标注规范 v1 定稿、标注耗时估计、歧义字段清单；**不产出指标**，
+  10 条的数字不能写进结论。
+- 双人标注：A 标全部 10 条，B 标 `is_overlap=1` 的 5 条算 κ；只有一人时注明单标注者，
+  Day 8 不得写双人 κ。
+- 真实样本：pilot 可全合成；Day 8 正式集**至少 30% 真实脱敏样本**，否则“像人”结论说服力打折。
+
 ---
 
 ## 4. 运行与采样协议（ADR-008）
@@ -139,7 +152,10 @@ Day 8 用 60 条正式确认，若稳定 ≥95% 可回退单次采样。多数�
   （时间/日期/数字/金额或原文字面片段），抽象概括单独放 `semantic_points`，不混入保留率。
   **主指标用覆盖率 0.7 口径**，精确子串作为“严格下界”辅助展示；同义替换（“处理→弄”）
   两者都会漏，人工语义保留判定只针对覆盖率口径下剩余 3 条（不全量），成本可控；
-- 承诺弱化：`commitment_weakened` 样本数，单独统计，不和事实丢失混在一起；
+- 承诺弱化：**逐条承诺判断**，每条被弱化的承诺在 `risk_flags` 里单独一项
+  `commitment_weakened:<fact>:<coverage>`；报告两个数——
+  `commitment_weakened_runs`（有弱化的回复数）和 `commitment_weakened_items`
+  （被弱化的承诺条目数），不要只报其中一个；
 - work 场景扩写率：`compression < -0.3` 的 work 样本数（正式场景话变多）；
 - `unsafe_omission` / `partial_omission` 比例（只统计具体实体的缺失；抽象改写与省略不在
   规则判定范围，靠人工「省略自然度」补充）；
@@ -151,7 +167,8 @@ Day 8 用 60 条正式确认，若稳定 ≥95% 可回退单次采样。多数�
 
 ## 6. 报告必须包含
 
-1. 样本量、来源配比（real/synthetic）、标注者数量与 κ；
+1. 样本量：**有效样本 N 条（schema 1.2）+ 跳过 M 条旧 schema 记录**，两个数都要写；
+   来源配比（real/synthetic）、标注者数量与 κ（单标注者写明）；
 2. requested / reported model、`system_fingerprint`、prompt 版本、git commit、config hash；
 3. 四个核心指标 + 置信区间 + 采样次数；
 4. 失败案例 Top 5（原文、gold、输出、命中的信号、改动说明）；
@@ -184,9 +201,12 @@ Day 8 用 60 条正式确认，若稳定 ≥95% 可回退单次采样。多数�
 ## 9. Day 8 待办（现在不展开）
 
 1. 人工语义保留：只判覆盖率口径下剩余 3 条，不全量。
-2. `commitment_weakened` 统计：承诺弱化单独看，不和事实丢失合并。
+2. `commitment_weakened` 统计：逐条承诺记录，分别报 `runs` 与 `items` 两个数；
+   不和事实丢失合并。
 3. work 扩写观察：`compression < -0.3` 的 work 样本，单独看是否啰嗦。
-4. ratio 调优：与 `kept_facts` 保留率、删除内容类型一起看；本轮不调。
+4. 双口径保留率：主指标覆盖率 0.7，精确值作严格下界。
+5. 报告样本量：有效 N 条（schema 1.2）+ 跳过 M 条旧 schema；Day 8 真实样本 ≥30%。
+6. ratio 调优：与 `kept_facts` 保留率、删除内容类型一起看；本轮不调。
 
 ---
 

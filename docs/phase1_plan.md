@@ -24,7 +24,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | ✅ Step 1–4 全部完成 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | ✅ 敏感桩 + 评估聚合（压缩完成） |
-| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
+| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | ✅ pilot + 规范 v1；标注执行/扩 60 待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
 | 9 | 盲评表 + 人工评分 + 统计 | 四指标 + CI | 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 别人 clone 后可复现 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：160 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合
+- `tests/`：165 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合、pilot 结构
 
 ## Day 2 下半段进度
 
@@ -258,6 +258,22 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 - `commitment_weakened` 独立标记；work `compression < -0.3` 单独统计。
 - 评估聚合实测：`data/runs` 里 5 条新 schema 记录可汇总，45 条旧记录被跳过。
 - 测试：160 passed。
+
+## Day 7：pilot 10 条 + 标注规范（已完成）
+
+- `data/eval/pilot_10.jsonl`：5 场景 × 2，反讽/非反讽 5/5，全部 synthetic；
+  rhythm_profile 为 5 single_msg / 4 short_burst / 1 long_explain。
+- `docs/annotation_guide_v1.md`：字段定义、评分 rubric、标注流程、计时、歧义记录、
+  双人 κ 与单标注者规则。
+- `data/eval/annotations/pilot_annotations_template.csv`：10 行，字段含
+  user_sarcasm 三态 + evidence、emotion label/intensity、persona_consistency 1–5、
+  rhythm_profile、omission_naturalness 1–3、ab_preference；`is_overlap=1` 5 条。
+- **pilot 唯一产出**：规范 v1 定稿、标注耗时估计、歧义字段清单；**不产出指标**。
+- 双人：A 全 10 条，B 5 条重叠算 κ；单人时注明单标注者，Day 8 不写双人 κ。
+- Day 8 正式集至少 30% 真实脱敏样本；报告写“有效 N 条（schema 1.2）+ 跳过 M 条旧 schema”。
+- `commitment_weakened` 改为逐条承诺：risk_flags 每条一项 `<fact>:<coverage>`，
+  统计 `runs` 与 `items` 两个数。
+- `scripts/pilot_check.py`：结构/模板校验通过；测试 165 passed。
 
 ## 已知约束
 

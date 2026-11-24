@@ -1,0 +1,11 @@
+sample_id,annotator_id,is_overlap,user_sarcasm,user_sarcasm_evidence,user_emotion_label,user_emotion_intensity,persona_consistency,rhythm_profile,omission_naturalness,ab_preference,notes
+pilot_01,,1,,,,,,single_msg,,, 
+pilot_02,,1,,,,,,short_burst,,, 
+pilot_03,,1,,,,,,short_burst,,, 
+pilot_04,,1,,,,,,short_burst,,, 
+pilot_05,,1,,,,,,single_msg,,, 
+pilot_06,,0,,,,,,short_burst,,, 
+pilot_07,,0,,,,,,single_msg,,, 
+pilot_08,,0,,,,,,single_msg,,, 
+pilot_09,,0,,,,,,single_msg,,, 
+pilot_10,,0,,,,,,long_explain,,, 

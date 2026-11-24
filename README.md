@@ -6,12 +6,11 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 6 完成**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
-> 稳定性探针、messages/rhythm/省略、kept_facts 锚点与 Day 5 回归均已完成。
-> Day 6 加了敏感词桩（`sensitive.py`，扫描 `final_text`）和评估聚合层
-> （`evaluate.py` + `eval_summary.py`），长度/分条读 `rewrite.messages`，不与 final_text 混。
-> `commitment_weakened` 独立标记；保留率主口径为覆盖率 0.7，精确值作严格下界。
-> 下一步：Day 7 评估集。默认仍走 `--provider mock`；还没有评估集。
+> 当前状态：**第 1 阶段 / Day 7 pilot 就绪**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
+> 稳定性探针、messages/rhythm/省略、kept_facts 锚点、Day 5 回归、敏感桩与评估聚合均已完成。
+> Day 7 产出 10 条 pilot（5 场景 × 2，反讽/非反讽 5/5）、标注规范 v1、标注模板与校验脚本；
+> **pilot 只验证规范，不产出指标**。`commitment_weakened` 改为逐条承诺记录，统计 runs/items 两个数。
+> 下一步：标注执行（A 全 10 条，B 5 条重叠算 κ）；Day 8 扩到 60 条且 ≥30% 真实脱敏。
 
 ---
 
@@ -76,6 +75,7 @@ python scripts/ai_smell_fusion_check.py                               # 融合�
 python scripts/probe_report.py                                        # 稳定性探针分布校验（零成本）
 python scripts/day5_regression.py                                     # Day 5 回归：链路/保留率/boundary
 python scripts/eval_summary.py --runs data/runs                       # 评估聚合：节奏/保留率/治理
+python scripts/pilot_check.py                                         # Day 7 pilot 结构与模板校验（零成本）
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -85,7 +85,7 @@ python scripts/eval_summary.py --runs data/runs                       # 评估�
 跑测试：
 
 ```powershell
-python -m pytest        # 160 passed
+python -m pytest        # 165 passed
 python -m ruff check src tests
 ```
 
@@ -132,9 +132,12 @@ src/humanize/
   cache.py                 # 缓存键 / 信号指纹（Day 2 接上磁盘缓存）
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
+data/eval/pilot_10.jsonl        # Day 7 pilot：5 场景 × 2，反讽 5/5
+data/eval/annotations/          # 标注模板（10 条，5 条重叠）
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 160 条测试
+tests/                          # 165 条测试
+docs/annotation_guide_v1.md     # Day 7 标注规范 v1（字段/流程/耗时/歧义）
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -205,7 +208,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | ✅ 探针两轮 + 方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate | ✅ Step 1–4（messages / rhythm / 省略 / kept_facts / 回归） |
 | 6 | 治理层最小版（残留 + 审计） | ✅ 敏感桩 + 评估聚合（压缩完成） |
-| 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |
+| 7–9 | pilot 10 条 / 扩 60 条 / 盲评 | pilot + 规范 ✅；标注执行与 60 条待做 |
 | 10 | 复盘、ADR、README、v0.1 | 待做 |
 
 设计取舍见 [docs/decisions.md](docs/decisions.md)，接口契约见
