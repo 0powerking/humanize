@@ -34,11 +34,17 @@ class MutableSarcasmClient:
         self.label = label
         self.calls = {"signal.sarcasm": 0, "rewrite": 0}
 
-    def complete_json(self, *, prompt_id, payload, model, temperature) -> LLMResult:
+    def complete_json(
+        self, *, prompt_id, payload, model, temperature, seed=None
+    ) -> LLMResult:
         if prompt_id in self.calls:
             self.calls[prompt_id] += 1
         result = self.inner.complete_json(
-            prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
         )
         if prompt_id != "signal.sarcasm":
             return result
@@ -56,11 +62,17 @@ class CapturingClient:
         self.inner = inner
         self.rewrite_payloads: list[dict] = []
 
-    def complete_json(self, *, prompt_id, payload, model, temperature) -> LLMResult:
+    def complete_json(
+        self, *, prompt_id, payload, model, temperature, seed=None
+    ) -> LLMResult:
         if prompt_id == "rewrite":
             self.rewrite_payloads.append(payload)
         return self.inner.complete_json(
-            prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
         )
 
 

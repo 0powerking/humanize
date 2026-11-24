@@ -19,11 +19,15 @@ class SelectiveFailClient:
         self.inner = inner
         self.fail = fail
 
-    def complete_json(self, *, prompt_id, payload, model, temperature) -> LLMResult:
+    def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
         if prompt_id in self.fail:
             raise LLMError(f"boom: {prompt_id}")
         return self.inner.complete_json(
-            prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
         )
 
 
@@ -35,9 +39,13 @@ class LyingRewriteClient:
     def __init__(self, inner: MockClient) -> None:
         self.inner = inner
 
-    def complete_json(self, *, prompt_id, payload, model, temperature) -> LLMResult:
+    def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
         result = self.inner.complete_json(
-            prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
         )
         if prompt_id != "rewrite":
             return result
@@ -46,8 +54,41 @@ class LyingRewriteClient:
         return replace(result, text=json.dumps(data, ensure_ascii=False))
 
 
+class SeedCapturingClient:
+    """Records the seed forwarded for each stage."""
+
+    name = "mock"
+
+    def __init__(self, inner: MockClient) -> None:
+        self.inner = inner
+        self.seeds: dict[str, int | None] = {}
+
+    def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
+        self.seeds[prompt_id] = seed
+        return self.inner.complete_json(
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
+        )
+
+
 def _pipeline(client, config: PipelineConfig, personas: PersonaBook, lexicon: Lexicon):
     return HumanizePipeline(config=config, personas=personas, lexicon=lexicon, client=client)
+
+
+def test_route_seeds_are_forwarded(config, personas, lexicon, client, sample) -> None:
+    capture = SeedCapturingClient(client)
+    record = _pipeline(capture, config, personas, lexicon).run(
+        sample("e001_overwork_advice")
+    )
+
+    assert capture.seeds["signal.sarcasm"] == 7
+    assert capture.seeds["signal.emotion"] == 7
+    assert capture.seeds["signal.ai_smell"] == 7
+    assert capture.seeds["rewrite"] == 42
+    assert record.meta["model_seeds"] == {"signal": 7, "rewrite": 42}
 
 
 def test_rewrite_removes_enumeration(pipeline, sample) -> None:

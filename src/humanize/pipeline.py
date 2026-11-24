@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from .cache import signal_fingerprint
 from .config import ModelRoute, PersonaBook, PipelineConfig
+from .cost import estimate_cost
 from .io import git_commit, now_iso, stable_hash
 from .lexicon import Lexicon
 from .llm import LLMClient, LLMResult, parse_json_object
@@ -138,6 +139,13 @@ class HumanizePipeline:
                 # Provenance of cached answers, so a hit produced by a different
                 # model is visible in the record instead of being invisible.
                 "cache_source_models": cache_source_models,
+                "system_fingerprints": sorted(
+                    {r.system_fingerprint for r in all_results if r.system_fingerprint}
+                ),
+                "model_seeds": {
+                    "signal": self.cfg.models.signal.seed,
+                    "rewrite": self.cfg.models.rewrite.seed,
+                },
             },
         )
 
@@ -422,6 +430,7 @@ class HumanizePipeline:
                 payload=payload,
                 model=route.model,
                 temperature=route.temperature,
+                seed=route.seed,
             )
             return _Outcome(name=name, data=parse_json_object(result.text), result=result)
         except Exception as exc:  # provider/format failures must degrade, not crash
@@ -441,21 +450,16 @@ class HumanizePipeline:
         signal_results: list[LLMResult],
         rewrite_result: LLMResult | None,
     ) -> Usage:
-        price_prompt = self.cfg.cost.price_per_1m_prompt_yuan
-        price_completion = self.cfg.cost.price_per_1m_completion_yuan
         results = [*signal_results, *([rewrite_result] if rewrite_result else [])]
         billable = [result for result in results if not result.cached]
         prompt_tokens = sum(result.prompt_tokens for result in billable)
         completion_tokens = sum(result.completion_tokens for result in billable)
-        cost = (prompt_tokens / 1_000_000) * price_prompt + (
-            completion_tokens / 1_000_000
-        ) * price_completion
         return Usage(
             calls=len(billable),
             cache_hits=len(results) - len(billable),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            cost_yuan=round(cost, 6),
+            cost_yuan=estimate_cost(results, self.cfg.cost),
         )
 
 

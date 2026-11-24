@@ -24,3 +24,6 @@ Thumbs.db
 
 # pytest tmp_path artifacts (TEMP may point inside the repo on this host)
 pytest-of-*/
+
+# variance reports (regenerable, contain model output)
+data/variance/

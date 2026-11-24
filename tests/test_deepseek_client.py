@@ -74,6 +74,37 @@ def test_json_mode_can_be_disabled(store: PromptStore) -> None:
     assert "response_format" not in captured
 
 
+def test_seed_is_forwarded_when_set(store: PromptStore) -> None:
+    captured: dict[str, Any] = {}
+
+    def transport(body: dict[str, Any]) -> dict[str, Any]:
+        captured.update(body)
+        return _ok()
+
+    client = _client(store, transport)
+    client.complete_json(
+        prompt_id="rewrite",
+        payload={"raw_reply": "在吗"},
+        model="deepseek-chat",
+        temperature=0.9,
+        seed=42,
+    )
+
+    assert captured["seed"] == 42
+
+
+def test_seed_is_omitted_when_none(store: PromptStore) -> None:
+    captured: dict[str, Any] = {}
+
+    def transport(body: dict[str, Any]) -> dict[str, Any]:
+        captured.update(body)
+        return _ok()
+
+    _call(_client(store, transport))
+
+    assert "seed" not in captured
+
+
 def test_retries_transient_5xx(store: PromptStore) -> None:
     calls: list[int] = []
 

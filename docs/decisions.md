@@ -52,7 +52,7 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 - `cache.signal_fingerprint()` = 对 `SignalBundle` 的语义内容做 sha256；
 - **剔除易变字段**（`meta.latency_ms`），否则同一语义的两次运行永远不命中；
 - `make_cache_key(stage, model, prompt_version, payload, signal_hash)` 把五者一起哈希；
-- `make_cache_key(stage, model, prompt_version, payload, signal_hash, temperature)`
+- `make_cache_key(stage, model, prompt_version, payload, signal_hash, temperature, seed)`
   把这些维度一起哈希；`payload` 里的 `signals` 本身就是信号视图，所以即使没有
   `signal_hash`，"原文没变、信号变了"也会 miss —— `signal_hash` 是对这条依赖的显式声明，
   防止将来payload 改成只传信号 id 时静默退化。
@@ -125,6 +125,53 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 
 **代价**：v1 的输出里可能仍有残留套路。
 **发现方式**：评估报告里 `residue_hits > 0` 的比例就是 1.5 阶段的优先级依据。
+
+---
+
+## ADR-007 成本估算与预算闸门
+
+**背景**：模型按输入/输出 token 计费，且官网价格区分高峰/空闲、输入缓存命中/未命中。
+只记 token 不换算金额，50 元预算就只是摆设。
+
+**决策**：
+- 单价写在 `config/pipeline.yaml` 的 `cost.models.<provider-reported-model>`，单位元/百万 token；
+  当前 key 实回 `deepseek-flash`，按 flash 价：输入命中 0.04、输入未命中 2、输出 8（高峰价）。
+- 空闲时段 = 高峰价 × `off_peak_factor`（0.5）；高峰窗口按北京时间工作日 9–12、14–18。
+- **法定节假日未建模**：节假日会按工作日算，属于**高估**，对预算保护是安全方向。
+- 金额用 provider 返回的 `prompt_cache_hit_tokens` 拆分命中/未命中，不把全部输入按未命中价算。
+- 未知模型走 `default` 档（按最贵的 v4-pro 估），避免低估。
+- `BudgetTracker`：80% 告警，100% 停止后续样本并以 exit code 4 退出。
+
+**实测**：单条 e002 冷跑约 0.006–0.014 元（取决于 provider 侧 prompt cache 命中）；
+60 条 × 2 组 × 3 次采样约 3–5 元，50 元预算足够。
+
+**如果错了会怎么发现**：连续跑批后把 `usage.cost_yuan` 与账单对账；偏差超过 20% 先查
+peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
+
+---
+
+## ADR-008 seed 不保证复现（2026-11-24 实测）
+
+**背景**：重写需要 `temperature=0.9` 的多样性，评估又需要可复现，原计划用固定 `seed` 兼顾。
+
+**实测**（`deepseek-flash`，`system_fingerprint` 三次运行恒为 `bc19ba97…`）：
+
+| 条件 | 结果 |
+|---|---|
+| `seed=42, temperature=0.9` 两次 | 文本不同 |
+| `seed=42, temperature=0.0` 两次 | 完全一致 |
+| 管线 3 次（`seed=7/42`, temp 0/0.9） | `sarcasm` 标签/置信度稳定；`emotion.valence` 在 −0.6/−0.7 间抖动，导致 3 个不同的信号指纹 |
+
+**结论**：
+1. `seed` 可以被网关接受、也会被记录，但**不能承诺复现**；同 `system_fingerprint` 下仍有采样差异。
+2. 评估协议：标签类指标（反讽 label、tone）单次即可；连续值（valence/arousal/confidence）
+   取 3 次中位数；重写类指标用 3 次采样均值 + 报告方差，不报单次结果当结论。
+3. 缓存：精确 JSON 指纹会被 ±0.1 的浮点抖动打穿，产生无意义 miss。Day 4 考虑把
+   `valence/arousal/confidence` 量化到 0.1 后再进指纹——**提案，未实施**，需要评估集验证量化
+   不会改变标签。
+4. 成本：3 次采样约 0.028 元/样本，预算可控（ADR-007）。
+
+**代价**：评估从“跑一次”变成“跑三次取均值”，时间 ×3；换来的是结论不依赖单次采样运气。
 
 ---
 

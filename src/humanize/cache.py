@@ -33,6 +33,7 @@ def make_cache_key(
     payload: Mapping[str, Any],
     signal_hash: str | None = None,
     temperature: float | None = None,
+    seed: int | None = None,
 ) -> str:
     """Deterministic key for one LLM stage call.
 
@@ -45,6 +46,7 @@ def make_cache_key(
         "model": model,
         "prompt_version": prompt_version,
         "temperature": temperature,
+        "seed": seed,
         "payload": dict(payload),
         "signal": signal_hash,
     }
@@ -108,11 +110,16 @@ class CachedClient:
         payload: Mapping[str, Any],
         model: str,
         temperature: float,
+        seed: int | None = None,
     ) -> LLMResult:
         prompt_version = self._versions.get(prompt_id)
         if not self._store.enabled or not prompt_version:
             return self._inner.complete_json(
-                prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+                prompt_id=prompt_id,
+                payload=payload,
+                model=model,
+                temperature=temperature,
+                seed=seed,
             )
 
         signal_hash: str | None = None
@@ -128,6 +135,7 @@ class CachedClient:
             payload=payload,
             signal_hash=signal_hash,
             temperature=temperature,
+            seed=seed,
         )
         entry = self._store.get(key)
         if entry is not None:
@@ -137,12 +145,17 @@ class CachedClient:
                 model=str(entry.get("model") or model),
                 prompt_tokens=int(entry.get("prompt_tokens") or 0),
                 completion_tokens=int(entry.get("completion_tokens") or 0),
+                system_fingerprint=entry.get("system_fingerprint") or None,
                 cached=True,
             )
 
         self.misses += 1
         result = self._inner.complete_json(
-            prompt_id=prompt_id, payload=payload, model=model, temperature=temperature
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
         )
         self._store.put(
             key,
@@ -153,6 +166,7 @@ class CachedClient:
                 "text": result.text,
                 "prompt_tokens": result.prompt_tokens,
                 "completion_tokens": result.completion_tokens,
+                "system_fingerprint": result.system_fingerprint,
             },
         )
         return result

@@ -20,7 +20,9 @@ class CountingClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float]] = []
 
-    def complete_json(self, *, prompt_id, payload, model, temperature) -> LLMResult:
+    def complete_json(
+        self, *, prompt_id, payload, model, temperature, seed=None
+    ) -> LLMResult:
         self.calls.append((prompt_id, model, temperature))
         return LLMResult(
             text='{"ok": true}',
@@ -44,12 +46,14 @@ def _call(
     *,
     model: str = "m",
     temperature: float = 0.9,
+    seed: int | None = None,
 ) -> LLMResult:
     return client.complete_json(
         prompt_id="rewrite",
         payload=payload or PAYLOAD,
         model=model,
         temperature=temperature,
+        seed=seed,
     )
 
 
@@ -90,6 +94,16 @@ def test_temperature_change_misses(tmp_path: Path) -> None:
 
     _call(client, temperature=0.9)
     _call(client, temperature=0.2)
+
+    assert len(inner.calls) == 2
+
+
+def test_seed_change_misses(tmp_path: Path) -> None:
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    _call(client, seed=42)
+    _call(client, seed=7)
 
     assert len(inner.calls) == 2
 

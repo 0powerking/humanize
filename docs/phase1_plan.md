@@ -19,7 +19,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | Day | 任务 | 验收 | 状态 |
 |---|---|---|---|
 | 1 | 仓库骨架、契约、config、JSONL IO、CLI、Mock 端到端、缓存键 | `pytest` 绿；产出完整 run record | ✅ |
-| 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | 上半段 ✅、缓存/e2e ✅；成本与 seed 待做 |
+| 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | 待做 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
@@ -56,17 +56,23 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：61 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、人设词过滤
+- `tests/`：73 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、成本、seed
 
 ## Day 2 下半段进度
 
 - 磁盘缓存 ✅：`CacheStore` + `CachedClient`，键含 `stage/model/prompt_version/temperature/
-  payload/signal_fingerprint`；冷跑 4 calls → 热跑 `cache=4`、`calls=0`、token=0、cost=0。
+  seed/payload/signal_fingerprint`；冷跑 4 calls → 热跑 `cache=4`、`calls=0`、token=0、cost=0。
 - **端到端验收 ✅**：`test_signal_content_change_invalidates_rewrite_cache`——同一输入下把
   `sarcasm.label` 从 literal 翻成 sarcastic（并 bump signal prompt 版本，模拟真实改动穿过
   信号缓存），断言重写调用次数 1→2，第三次全命中。
 - provenance 已从重写 payload 中移除（`rewrite_view`），命中来源写入 `meta.cache_source_models`。
-- 待做：成本换算 + 50 元预算告警；rewrite `seed` 固定；同输入 3 次采样方差测试。
+- 成本 ✅：峰谷价 + provider prompt cache 命中价；`BudgetTracker` 80% 告警 / 100% 停止；
+  单条冷跑实测 0.006–0.010 元，3 次采样 0.028 元。
+- seed ✅：`signal.seed=7`、`rewrite.seed=42`，进入请求与缓存键。
+- 方差实测（ADR-008）：temp 0 两次一致；temp 0.9 同 seed 三次文本不同；temp 0 三次管线中
+  sarcasm 标签稳定，但 `emotion.valence` 在 −0.6/−0.7 抖动。结论：seed 不承诺复现，
+  评估按 3 次采样取均值/中位数。
+- 结果：Day 2 完成。下一阶段 Day 3（AI 味诊断）与 Day 5 前的节奏改造待开工。
 
 ## 已知约束
 

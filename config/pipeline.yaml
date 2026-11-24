@@ -19,10 +19,12 @@ api:
 models:
   signal:
     model: deepseek-chat
-    temperature: 0.0      # 判定类任务不采样，保证可复现
+    temperature: 0.0      # 判定类任务不采样
+    seed: 7               # 记录进请求与缓存键；不承诺复现，见 ADR-008
   rewrite:
     model: deepseek-chat
-    temperature: 0.9      # 重写需要多样性，但会被 seed 固定
+    temperature: 0.9      # 重写需要多样性
+    seed: 42              # 同上：网关接受 seed，但实测不保证输出一致
 
 # 每个模块独立版本号；prompt 改动必须同步 bump，否则缓存会错误命中。
 prompt_versions:
@@ -33,7 +35,7 @@ prompt_versions:
 
 thresholds:
   # ai_smell.score 低于此值时允许"几乎不改"（rewrite gate）。
-  # 0.25 ≈ 只命中 1 个 severity=2 的套路。
+  # 0.25 ≈ 只命中 1 个 severity=2 的套路。Day 8 按两类错误调，见 ADR-005。
   rewrite_gate_ai_smell: 0.25
   # 单条回复允许改动字符比例的上限；超过只记录 risk_flag，不截断。
   max_rewrite_ratio: 0.6
@@ -59,14 +61,29 @@ govern:
 cache:
   enabled: true
   dir: data/cache
-  # 重写缓存键 = 模型 + prompt 版本 + 温度 + payload（含信号视图）+ 信号指纹。
+  # 重写缓存键 = 模型 + prompt 版本 + 温度 + seed + payload（含信号视图）+ 信号指纹。
   # 信号内容进入 payload，所以"原文没变、信号变了"必然 miss，见 ADR-004。
 
 cost:
   budget_yuan: 50.0
-  # 按 DeepSeek 官网实际价格填写（元 / 百万 token）。留 0 表示暂不估算。
-  price_per_1m_prompt_yuan: 0.0
-  price_per_1m_completion_yuan: 0.0
+  # 官网规则：空闲时段 = 高峰价 × 0.5；北京时间工作日 9-12、14-18 为高峰。
+  # 法定节假日未建模，节假日会按工作日高估（见 ADR-007）。
+  off_peak_factor: 0.5
+  pricing_mode: auto      # auto | peak | off_peak
+  # 元 / 百万 tokens，高峰价。键是 provider 实回模型名。
+  models:
+    deepseek-flash:       # 本 key 的实际路由目标
+      prompt_cache_hit_yuan: 0.04
+      prompt_cache_miss_yuan: 2.0
+      completion_yuan: 8.0
+    deepseek-v4-pro:
+      prompt_cache_hit_yuan: 0.30
+      prompt_cache_miss_yuan: 9.0
+      completion_yuan: 27.0
+    default:              # 未知模型按最贵档估算，避免低估预算
+      prompt_cache_hit_yuan: 0.30
+      prompt_cache_miss_yuan: 9.0
+      completion_yuan: 27.0
 
 paths:
   prompts_dir: prompts

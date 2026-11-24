@@ -41,6 +41,8 @@ class LLMResult:
     model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    prompt_cache_hit_tokens: int = 0
+    system_fingerprint: str | None = None
     latency_ms: int = 0
     cached: bool = False
 
@@ -55,6 +57,7 @@ class LLMClient(Protocol):
         payload: Mapping[str, Any],
         model: str,
         temperature: float,
+        seed: int | None = None,
     ) -> LLMResult:
         """Return the model's raw text; caller parses and validates it."""
 
@@ -140,6 +143,7 @@ class DeepSeekClient:
         payload: Mapping[str, Any],
         model: str,
         temperature: float,
+        seed: int | None = None,
     ) -> LLMResult:
         started = time.perf_counter()
         rendered = self._prompts.render(prompt_id, payload)
@@ -148,6 +152,8 @@ class DeepSeekClient:
             "messages": rendered.messages,
             "temperature": temperature,
         }
+        if seed is not None:
+            body["seed"] = seed
         if self._json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -167,6 +173,10 @@ class DeepSeekClient:
             model=str(data.get("model") or model),
             prompt_tokens=_as_int(usage.get("prompt_tokens")),
             completion_tokens=_as_int(usage.get("completion_tokens")),
+            prompt_cache_hit_tokens=_as_int(usage.get("prompt_cache_hit_tokens")),
+            system_fingerprint=(
+                str(data["system_fingerprint"]) if data.get("system_fingerprint") else None
+            ),
             latency_ms=latency_ms,
         )
 
@@ -267,6 +277,7 @@ class MockClient:
         payload: Mapping[str, Any],
         model: str,
         temperature: float,
+        seed: int | None = None,
     ) -> LLMResult:
         started = time.perf_counter()
         if prompt_id == "signal.sarcasm":

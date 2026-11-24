@@ -22,6 +22,9 @@ class ConfigError(RuntimeError):
 class ModelRoute(StrictModel):
     model: str = "deepseek-chat"
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    # Sent to the provider when set. Kept in the cache key: a different seed is a
+    # different sampling request, even if the prompt is identical.
+    seed: int | None = Field(default=None, ge=0)
 
 
 class ModelsConfig(StrictModel):
@@ -47,10 +50,23 @@ class CacheConfig(StrictModel):
     dir: str = "data/cache"
 
 
+class ModelPrice(StrictModel):
+    """Yuan per 1M tokens, peak-hour list price."""
+
+    prompt_cache_hit_yuan: float = Field(default=0.0, ge=0.0)
+    prompt_cache_miss_yuan: float = Field(default=0.0, ge=0.0)
+    completion_yuan: float = Field(default=0.0, ge=0.0)
+
+
 class CostConfig(StrictModel):
     budget_yuan: float = Field(default=50.0, ge=0.0)
-    price_per_1m_prompt_yuan: float = Field(default=0.0, ge=0.0)
-    price_per_1m_completion_yuan: float = Field(default=0.0, ge=0.0)
+    # Official rule: off-peak is half of peak. Beijing time, Mon-Fri 9-12 & 14-18
+    # are peak; weekends are off-peak. Public holidays are NOT modeled -> estimate
+    # overstates cost on holidays (documented in ADR-009).
+    off_peak_factor: float = Field(default=0.5, ge=0.0, le=1.0)
+    pricing_mode: Literal["auto", "peak", "off_peak"] = "auto"
+    # Keyed by provider-reported model name; "default" is the conservative fallback.
+    models: dict[str, ModelPrice] = Field(default_factory=dict)
 
 
 class ApiConfig(StrictModel):

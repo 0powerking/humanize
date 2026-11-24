@@ -6,11 +6,11 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 2 下半段（缓存完成）**。五段管线已打通；`DeepSeekClient`
-> 与 4 个 v0 prompt 已通过真实 smoke；磁盘缓存按信号指纹失效，冷跑 4 次调用 → 热跑
-> 4 次命中、0 token、0 成本。默认仍走 `--provider mock`（离线、零成本）。
+> 当前状态：**第 1 阶段 / Day 2 完成**。五段管线已打通；`DeepSeekClient` 与 4 个 v0 prompt
+> 已通过真实 smoke；磁盘缓存按信号指纹失效；成本按峰谷价换算并带预算闸门；rewrite `seed`
+> 已固定并进入缓存键。默认仍走 `--provider mock`（离线、零成本）。
 > 仓库里只有 4 条 `source=synthetic` 的 smoke 样例，**还没有评估集，也没有评估数字**。
-> 成本换算、seed 固定、多消息节奏（Day 5 前置）尚待做。
+> 实测 `seed` 不保证复现（ADR-008）；多消息节奏是 Day 5 前置任务，当前 schema 未改。
 
 ---
 
@@ -68,6 +68,7 @@ python -m humanize schema signals     # 打印某一层的 JSON Schema
 python -m humanize run --sample e002_sarcasm_late --dry-run
 python -m humanize run --provider deepseek --sample e002_sarcasm_late
 python -m humanize run --no-cache     # 绕过磁盘缓存，强制重新调用
+python scripts/variance_check.py --sample e002_sarcasm_late --runs 3   # 3 次采样方差（花钱）
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -77,7 +78,7 @@ python -m humanize run --no-cache     # 绕过磁盘缓存，强制重新调用
 跑测试：
 
 ```powershell
-python -m pytest        # 61 passed
+python -m pytest        # 73 passed
 python -m ruff check src tests
 ```
 
@@ -125,7 +126,7 @@ src/humanize/
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 61 条测试
+tests/                          # 73 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 ```
@@ -156,6 +157,23 @@ docs/phase1_plan.md             # 第一阶段计划与进度
 - 只对非缓存调用计费，避免热跑把成本算重
 - `data/cache/` 已 gitignore；`--no-cache` 可强制穿透
 
+### 成本与预算
+
+- 单价在 `config/pipeline.yaml` 的 `cost.models.<reported_model>`，按 provider 实回模型取价
+  （当前是 `deepseek-flash`，高峰价：输入命中 0.04 / 未命中 2 / 输出 8 元每百万 token）。
+- 高峰/空闲：北京时间工作日 9–12、14–18 为高峰，空闲 ×0.5；法定节假日未建模，会高估。
+- provider 侧 prompt cache 命中按 `prompt_cache_hit_tokens` 单独计价。
+- 80% 预算告警，100% 停止后续样本并以 exit code 4 退出。
+- 实测：单条冷跑约 0.006–0.010 元，3 次采样约 0.028 元；50 元预算足够跑完评估集多轮。
+
+### seed 与随机性（实测，ADR-008）
+
+- `seed` 会发送给 provider，也会进入缓存键；但**不保证复现**。
+- `temperature=0` 两次调用完全一致；`temperature=0.9` 同 seed 三次文本不同；三次管线运行中
+  sarcasm 标签稳定，但 `emotion.valence` 在 −0.6/−0.7 抖动。
+- 因此评估按 3 次采样取均值/中位数，不把单次输出当结论；`scripts/variance_check.py` 生成
+  `data/variance/` 报告（含信号快照、成对相似度、system_fingerprint）。
+
 ## 当前限制（诚实版）
 
 1. **`MockClient` 的重写质量不代表最终效果**：它的改写是"删句子 + 词典替换"，粗暴且会过度删除
@@ -171,7 +189,7 @@ docs/phase1_plan.md             # 第一阶段计划与进度
 | Day | 内容 | 状态 |
 |---|---|---|
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
-| 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | 上半段 ✅ + 缓存/端到端 ✅；成本换算、seed 待做 |
+| 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | 待做 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |

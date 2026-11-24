@@ -16,6 +16,7 @@ from pathlib import Path
 from . import __version__
 from .cache import CachedClient, CacheStore
 from .config import ConfigError, PipelineConfig, load_config, load_personas
+from .cost import BudgetTracker
 from .env import load_env
 from .io import InputError, load_run_inputs, persist_run_record
 from .lexicon import Lexicon, LexiconError, load_lexicon
@@ -124,14 +125,37 @@ def _cmd_run(args: argparse.Namespace) -> int:
         client=client,
     )
     runs_dir = Path(args.out or config.paths.runs_dir)
+    budget = BudgetTracker(config.cost.budget_yuan)
+    warned_printed = False
+    run_count = 0
 
     for item in inputs:
         record = pipeline.run(item)
+        run_count += 1
         saved = None if args.dry_run else persist_run_record(record, runs_dir)
         _print_summary(record, saved, show_text=not args.quiet)
+        budget.add(record.usage.cost_yuan)
 
-    print(f"\n{len(inputs)} run(s), provider={client.name}, dry_run={args.dry_run}")
-    return 0
+        if budget.exceeded:
+            print(
+                f"error: estimated cost {budget.spent_yuan:.4f} CNY reached the "
+                f"{budget.budget_yuan:.2f} CNY budget; stopped before remaining samples",
+                file=sys.stderr,
+            )
+            break
+        if budget.warned and not warned_printed:
+            print(
+                f"warning: estimated cost {budget.spent_yuan:.4f} CNY has used "
+                f"{budget.spent_yuan / budget.budget_yuan:.0%} of the budget",
+                file=sys.stderr,
+            )
+            warned_printed = True
+
+    print(
+        f"\n{run_count} run(s), provider={client.name}, dry_run={args.dry_run}, "
+        f"estimated_cost={budget.spent_yuan:.4f} CNY / budget {budget.budget_yuan:.2f}"
+    )
+    return 4 if budget.exceeded else 0
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
