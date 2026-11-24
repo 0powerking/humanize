@@ -37,12 +37,17 @@ class Thresholds(StrictModel):
     max_rewrite_ratio: float = Field(default=0.6, ge=0.0, le=1.0)
     min_rewrite_chars: int = Field(default=4, ge=1)
     signal_failure_default_ai_smell: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Gate-permitted edits at or below this ratio are reverted to noop.
+    # Tunable in Step 4 after regression data.
+    noop_trivial_ratio: float = Field(default=0.2, ge=0.0, le=1.0)
 
 
 class GovernConfig(StrictModel):
     local_rewrite_enabled: bool = False
     block_on_hit: bool = False
     sensitive_stub: tuple[str, ...] = ()
+    omission_check: bool = True
+    omission_context_turns: int = Field(default=4, ge=1, le=10)
 
 
 class CacheConfig(StrictModel):

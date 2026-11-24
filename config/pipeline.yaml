@@ -44,7 +44,7 @@ prompt_versions:
   signal.sarcasm: sig.sarcasm.v1
   signal.emotion: sig.emotion.v1
   signal.ai_smell: sig.ai_smell.v2
-  rewrite: rw.v3
+  rewrite: rw.v5
 
 thresholds:
   # ai_smell.score 低于此值时允许"几乎不改"（rewrite gate）。
@@ -57,12 +57,18 @@ thresholds:
   # 信号层失败时的中性兜底；ai_smell 故意取 0.5（高于 gate），
   # 让管线在"不知道脏不脏"时倾向重写而不是放行。见 ADR-003。
   signal_failure_default_ai_smell: 0.5
+  # gate 放行且 AI 味为 0 时，实际改动比例不超过该值就强制 noop。
+  # Step 4 根据回归数据再调。
+  noop_trivial_ratio: 0.2
 
 govern:
   # 第一阶段只做"检测 + 记录"，命中后不自动局部重写（1.5 阶段再做）。
   local_rewrite_enabled: false
   # 敏感词桩：只记录分类，不拦截；接 IM 前替换为正式词库并打开 block_on_hit。
   block_on_hit: false
+  # 省略合法性：只查 kept_facts 实体 + 被删的名词/动词短语，语气词/连接词不查。
+  omission_check: true
+  omission_context_turns: 4
   sensitive_stub:
     - 加微信
     - 加V

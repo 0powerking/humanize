@@ -145,9 +145,17 @@ class MessagesClient:
 
     name = "mock"
 
-    def __init__(self, inner: MockClient, messages: list[str]) -> None:
+    def __init__(
+        self,
+        inner: MockClient,
+        messages: list[str],
+        change_notes: list[dict] | None = None,
+        kept_facts: list[str] | None = None,
+    ) -> None:
         self.inner = inner
         self.messages = messages
+        self.change_notes = change_notes or []
+        self.kept_facts = kept_facts or []
 
     def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
         result = self.inner.complete_json(
@@ -163,8 +171,8 @@ class MessagesClient:
             {
                 "messages": self.messages,
                 "rewrite_ratio": 0.2,
-                "change_notes": [],
-                "kept_facts": [],
+                "change_notes": self.change_notes,
+                "kept_facts": self.kept_facts,
                 "risk_flags": [],
                 "noop": False,
             },
@@ -271,7 +279,11 @@ def test_trivial_edit_on_gated_sample_is_forced_noop(
     config, personas, lexicon, client, sample
 ) -> None:
     record = _pipeline(
-        MessagesClient(client, ["周六下午吧，上午得补觉"]),
+        MessagesClient(
+            client,
+            ["周六下午吧，上午得补觉"],
+            change_notes=[{"op": "把要改成得", "reason": "tone", "signal_ref": None}],
+        ),
         config,
         personas,
         lexicon,
@@ -281,6 +293,23 @@ def test_trivial_edit_on_gated_sample_is_forced_noop(
     assert record.rewrite.messages == (record.input.raw_reply,)
     assert record.rewrite.rewrite_ratio == 0.0
     assert "forced_noop_trivial_edit" in record.rewrite.risk_flags
+    assert record.rewrite.change_notes[0].suppressed is True
+    assert record.rewrite.change_notes[0].suppressed_by == "forced_noop_trivial_edit"
+
+
+def test_unsafe_omission_flows_to_risk_flags(config, personas, lexicon, client, sample) -> None:
+    record = _pipeline(
+        MessagesClient(client, ["改天吧"], kept_facts=["周六下午"]),
+        config,
+        personas,
+        lexicon,
+    ).run(sample("e004_natural_noop"))
+
+    assert "unsafe_omission" in record.rewrite.risk_flags
+    assert any(
+        "unsafe_omission: 周六下午" in decision
+        for decision in record.govern.audit.decisions
+    )
 
 
 def test_run_signals_returns_usage_without_rewrite(pipeline, sample) -> None:

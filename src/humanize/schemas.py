@@ -252,6 +252,10 @@ class ChangeNote(StrictModel):
     op: str = Field(min_length=1, max_length=60)
     reason: str = Field(min_length=1, max_length=200)
     signal_ref: str | None = None
+    # Set when a pipeline guard kept the note but reverted the edit; the note is
+    # the audit trail of what the model wanted to do.
+    suppressed: bool = False
+    suppressed_by: str | None = None
 
 
 class RewriteOutput(StrictModel):

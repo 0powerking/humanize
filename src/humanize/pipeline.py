@@ -32,6 +32,7 @@ from .cost import estimate_cost
 from .io import git_commit, now_iso, stable_hash
 from .lexicon import Lexicon
 from .llm import LLMClient, LLMResult, parse_json_object
+from .omission import check_omissions
 from .schemas import (
     SCHEMA_VERSION,
     AiSmellExtra,
@@ -102,8 +103,16 @@ class HumanizePipeline:
         rewrite_ms = _elapsed_ms(rewrite_started)
 
         govern_started = time.perf_counter()
-        govern = self._govern(inp, signals, rewrite, rewrite_degraded)
+        govern, omission_flags = self._govern(inp, signals, rewrite, rewrite_degraded)
         govern_ms = _elapsed_ms(govern_started)
+        if omission_flags:
+            rewrite = rewrite.model_copy(
+                update={
+                    "risk_flags": tuple(
+                        dict.fromkeys((*rewrite.risk_flags, *omission_flags))
+                    )
+                }
+            )
 
         degraded = tuple(sorted(set(signals.meta.degraded) | set(rewrite_degraded)))
         usage = self._usage(signal_results, rewrite_result)
@@ -391,12 +400,28 @@ class HumanizePipeline:
         actual = 1.0 - SequenceMatcher(None, inp.raw_reply, text).ratio()
         actual = round(max(0.0, min(1.0, actual)), 3)
 
-        if allow_noop and not output.noop and ai_smell_score == 0 and actual <= 0.2:
+        if (
+            allow_noop
+            and not output.noop
+            and ai_smell_score == 0
+            and actual <= self.cfg.thresholds.noop_trivial_ratio
+        ):
             messages = [inp.raw_reply]
             text = inp.raw_reply
             actual = 0.0
             flags.append("forced_noop_trivial_edit")
-            output = output.model_copy(update={"noop": True, "change_notes": ()})
+            # Keep the notes: they record what the model wanted to change even
+            # though the pipeline reverted it.
+            notes = tuple(
+                note.model_copy(
+                    update={
+                        "suppressed": True,
+                        "suppressed_by": "forced_noop_trivial_edit",
+                    }
+                )
+                for note in output.change_notes
+            )
+            output = output.model_copy(update={"noop": True, "change_notes": notes})
 
         if abs(actual - output.rewrite_ratio) > 0.2:
             flags.append("ratio_self_report_mismatch")
@@ -428,7 +453,7 @@ class HumanizePipeline:
         signals: SignalBundle,
         rewrite: RewriteOutput,
         rewrite_degraded: tuple[str, ...],
-    ) -> GovernOutput:
+    ) -> tuple[GovernOutput, tuple[str, ...]]:
         started = time.perf_counter()
         policy = self.cfg.govern
 
@@ -474,6 +499,22 @@ class HumanizePipeline:
             action="block" if blocked else "pass",
         )
 
+        omission_flags: tuple[str, ...] = ()
+        omission_details: tuple[str, ...] = ()
+        if policy.omission_check:
+            context_texts = tuple(
+                turn.content for turn in inp.context.turns[-policy.omission_context_turns :]
+            )
+            omission = check_omissions(
+                raw_reply=inp.raw_reply,
+                final_text=rewrite.text,
+                kept_facts=rewrite.kept_facts,
+                context_texts=context_texts,
+                lexicon=self.lexicon,
+            )
+            omission_flags = omission.flags
+            omission_details = omission.details
+
         gate = self.cfg.thresholds.rewrite_gate_ai_smell
         gate_passed = signals.ai_smell.score < gate
         decisions = [
@@ -494,7 +535,14 @@ class HumanizePipeline:
                 else "residue: clean"
             ),
             f"sensitive: {sensitive.action}; categories={list(sensitive.categories) or 'none'}",
+            (
+                f"omission: {len(omission_details)} issue(s) {list(omission_flags)}"
+                if omission_flags
+                else "omission: clean"
+            ),
         ]
+        for detail in omission_details[:3]:
+            decisions.append(f"omission: {detail}")
         if blocked:
             decisions.append("blocked: output withheld by governance")
         if rewrite_degraded:
@@ -509,17 +557,20 @@ class HumanizePipeline:
             f"vocab:{word}" for word in forbidden
         )
 
-        return GovernOutput(
-            final_text=rewrite.text if not blocked else "（内容被治理层拦截）",
-            residue=residue,
-            sensitive=sensitive,
-            audit=AuditLog(
-                trace_id=inp.run_id,
-                rule_hits=rule_hits,
-                decisions=tuple(decisions),
-                elapsed_ms=_elapsed_ms(started),
-                config_hash=self._config_hash,
+        return (
+            GovernOutput(
+                final_text=rewrite.text if not blocked else "（内容被治理层拦截）",
+                residue=residue,
+                sensitive=sensitive,
+                audit=AuditLog(
+                    trace_id=inp.run_id,
+                    rule_hits=rule_hits,
+                    decisions=tuple(decisions),
+                    elapsed_ms=_elapsed_ms(started),
+                    config_hash=self._config_hash,
+                ),
             ),
+            omission_flags,
         )
 
     # -- helpers ----------------------------------------------------------- #

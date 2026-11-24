@@ -335,8 +335,10 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
    bump prompt 版本，否则模型与评估口径不一致。
 2. **正式场景硬兜底**：`scene` 不在 `split_allowed_scenes` 且模型输出多条时，管线用 `""` 合并为
    一条，记 `merged_outside_split_scene` 到 `risk_flags`。
-3. **trivial edit 硬兜底**：`allow_noop=true`、`ai_smell.score == 0`、实际 ratio ≤ 0.2 时，
-   管线强制 noop（消息=原文、ratio=0、change_notes 清空），记 `forced_noop_trivial_edit`。
+3. **trivial edit 硬兜底**：`allow_noop=true`、`ai_smell.score == 0`、实际 ratio ≤
+   `thresholds.noop_trivial_ratio`（默认 0.2，配置化）时，管线强制 noop（消息=原文、ratio=0），
+   但**保留 change_notes** 并逐条标 `suppressed: true` + `suppressed_by: forced_noop_trivial_edit`。
+   这样能统计“模型想改但被拦”的次数，作为 prompt 质量的信号；阈值 Step 4 按回归数据调。
    这是“不要为了改而改”的最低保证；0.2 是经验阈值，先记录，Day 8 评估可调。
 4. persona `max_chars` 只约束单条，不乘分条数；分条数由 `max_messages_per_reply` 管（ADR-010）。
 
@@ -359,11 +361,65 @@ e001/e003 的 `rewrite_ratio` 分别 0.86/0.83，触发 `rewrite_ratio_over_limi
 
 ---
 
+## ADR-012 语用省略检查：精度优先，范围收窄（Day 5 Step 3）
+
+**背景**：Step 3 给 prompt v5 加了省略规则（日常场景可省主语/重复信息/指代，正式场景禁止，
+comfort 不省支撑性表达），并要求治理层检查 `unsafe_omission`。
+
+**第一版实现与实测问题**：按“逐子句骨架 + 字符覆盖率”比对，4 条验证出现大量误报：
+
+- e001 一次 7 条，主要是把“评估核心诉求 → 看看自己最想要啥”这类**同义改写**判成省略；
+- probe_031 4 条、probe_008 2 条，把“不想麻烦对方 → 想让我来就直说”判成丢失。
+
+规则级字符串比对无法可靠区分“省略”和“改写”；误报会直接污染“省略自然度”指标。
+
+**决策**：
+1. 只判定**可判定的具体实体**：`kept_facts` 里带时间/日期/数字/金额标记的条目，
+   以及 raw 中被删除的具体时间/数字 span。
+2. 匹配用包含 + 字符覆盖率 0.8；`kept_facts` 只出现一部分（如“周六下午 → 周六”）记
+   `partial_omission`（进 risk_flags，不阻断）；完全缺失且不在最近 N 轮上下文里记
+   `unsafe_omission`。
+3. 抽象名词/动词、同义改写、语气词/连接词**不进入规则检查**；这些交给 `kept_facts` 质量
+   与人工评估。这是已知局限，不假装规则能判断语义。
+4. 上下文窗口 `govern.omission_context_turns=4`，可配置。
+5. 检查结果只进 `risk_flags` + 审计细节，不自动改写。
+
+**4 条验证（prompt v5，真实 deepseek-flash，`--no-cache`）**：
+
+| 样本 | scene | 消息 | omission |
+|---|---|---|---|
+| e001 | casual | 3 条（18/13/11 字） | clean |
+| probe_031 | comfort / weak | 2 条（7/14 字） | clean |
+| probe_008 | comfort / weak | 2 条（13/12 字） | clean |
+| probe_025 | work | 1 条（13 字，noop） | clean |
+
+**遗留问题**：e001 的 `kept_facts` 仍然写成“评估核心诉求/观察市场机会/做好财务缓冲”这类抽象概括，
+没有按 prompt 要求列具体实体；Step 4 的“kept_facts 保留率”因此会偏噪声。Step 3 不继续磨 prompt，
+留到 Step 4 与 ratio 一起看。
+
+---
+
+## Step 4 前置口径：ratio 和 kept_facts 一起看
+
+- `rewrite_ratio` 高**不等于**信息丢失。删掉“首先/其次/从另一个角度”这类 AI 味套话，
+  ratio 0.86 是有效压缩；只有删掉 `kept_facts` 实体或关键限定（“周六下午→周六”、
+  “别裸辞→别急”）才是问题。
+- 判定顺序：先看 `kept_facts` 保留率，再看被删内容的类型；**全保留 + 高 ratio = 好压缩，
+  不调 prompt**；实体丢失才收紧。
+- e002 的 `ratio_self_report_mismatch` 同理：对比模型自报与实际 ratio，判断是“自报不准”
+  还是“实际改写真的大”，不要凭感觉调。
+- 当前 `kept_facts` 质量本身受 prompt 影响（见 ADR-012 遗留问题），Step 4 先修 fact 粒度，
+  再谈 ratio 阈值。
+
+---
+
+## Day 5 前置任务：节奏与语用省略（Step 1–3 已实施）
+
 **观察**：真人即时聊天的"人味"很大一部分来自节奏——短句、一条拆成多条发、单条很少
 超过 20 字。当前 `RewriteOutput` 只有单个 `text`，等于假设"一条输入对应一条输出"，
 结果仍然是"消息块"而不是"聊天"。
 
-**状态：Step 1 / Step 2 已实施（messages + rhythm + 硬兜底）；语用省略未实施。**
+**状态：Step 1 / Step 2 / Step 3 已实施（messages + rhythm + 省略检查）；Step 4 回归待做。**
 
 1. ✅ `RewriteOutput` 改为 `messages`（1–4 条）；`message_count`、`max_msg_chars` 重算；
    治理层用 `\n` 合并并写审计（ADR-010）。
@@ -371,8 +427,9 @@ e001/e003 的 `rewrite_ratio` 分别 0.86/0.83，触发 `rewrite_ratio_over_limi
    `max_messages_per_reply=4`、`split_allowed_scenes=[casual,banter,comfort]`。
    **与 persona 的边界**：`target_msg_chars_p50` 优先；persona `max_chars` 只约束单条，
    不乘到分条数上。正式场景多条由管线强制合并（ADR-011）。
-3. ✅ `prompts/rewrite.md` v3 增加节奏规则：日常闲聊优先拆 2–3 条短消息、每条独立可读、
-   承接上一条；正式场景必须单条；单条目标 12 字、上限 35 字，超 35 优先精简不再拆。
+3. ✅ `prompts/rewrite.md` v5 增加节奏规则：日常闲聊优先拆 2–3 条短消息、每条独立可读、
+   承接上一条；正式场景必须单条；单条目标 12 字、上限 35 字，超 35 优先精简不再拆；
+   日常场景允许语用省略，正式场景禁止，comfort 不省支撑性表达。
 
 **评估侧同步加**：
 - 「消息长度分布」：P50/P95、超 35 字占比（零人工成本，自动算）；
@@ -389,21 +446,22 @@ e001/e003 的 `rewrite_ratio` 分别 0.86/0.83，触发 `rewrite_ratio_over_limi
 例如上文已经提过堵车，回复"我编的"就够；当前重写层倾向输出完整句（"堵车这理由我自己都不信"），
 和即时聊天的语用习惯相反。完整句不是错，但"每条都完整"本身就是 AI 味。
 
-**状态：未实施，现在不改 prompt / schema。** Day 5 与节奏改造一起落地三件事：
+**状态：Step 1–3 已实施；Step 4 回归待做。**
 
-1. `prompts/rewrite.md` 加规则：日常闲聊允许语用省略，但必须同时满足——
+1. ✅ `prompts/rewrite.md` v5 加规则：日常闲聊允许语用省略，但必须同时满足——
    被省略的信息在**上文出现过**、指代**无歧义**、`kept_facts` 里的实体**不能省**；
-   正式场景（`work` / `boundary`）不省略。
-2. 治理层加“省略合法性”自动检查（规则级、零成本，和 `kept_facts` 实体比对同一层）：
-   对比 raw 与 rewritten，提取被删的实体/关键词，检查是否在最近 N 轮上下文出现过；
-   没出现过 → 标记 `unsafe_omission` 计入 `risk_flags`，不自动改写。
-   **检查范围**：只查 `kept_facts` 实体 + 被删的**名词/动词短语**；语气词、连接词不查
-   （否则“行吧”被删也会标记，误报率太高）。
+   正式场景（`work` / `boundary`）不省略；comfort 不省支撑性表达。
+2. ✅ 治理层加“省略合法性”自动检查（规则级、零成本）：
+   对比 raw 与 rewritten，检查 `kept_facts` 实体与具体时间/数字 span 是否仍在
+   final_text 或最近 N 轮上下文；缺失记 `unsafe_omission`，部分记 `partial_omission`，
+   进 `risk_flags`，不阻断。
+   **范围收窄（ADR-012）**：只查可判定的具体实体；抽象名词/动词与同义改写不做规则判断
+   （第一版误报 7/4/2，精度不可接受），留给 kept_facts 质量与人工评估。
 3. 评估加人工指标「省略自然度」1–3 分（1=省得看不懂，3=省得自然），抽 20 条，
    与「分条合理性」放**同一张盲评表**，不增加评分轮次。
 
-**风险**：省略过度会让回复失去可读性，尤其在跨话题、多人群里；所以合法性检查必须是硬门禁，
-且 `unsafe_omission` 的比例要单独报，不能被总体“像人”偏好掩盖。
+**风险**：省略过度会让回复失去可读性，尤其在跨话题、多人群里；所以 `unsafe_omission`
+比例要单独报，不能被总体“像人”偏好掩盖。
 
 ---
 

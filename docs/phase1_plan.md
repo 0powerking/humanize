@@ -22,7 +22,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1/2 ✅（messages + rhythm + 6 条目测）；省略待做 |
+| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1–3 ✅；Step 4 回归待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：138 条测试 + 1 条 Step 4 提醒，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底
+- `tests/`：148 条测试 + 1 条 Step 4 提醒，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查
 
 ## Day 2 下半段进度
 
@@ -188,6 +188,30 @@ total            14        16     2     32
 - 代价：e001/e003 的 ratio 0.86/0.83 触发 `rewrite_ratio_over_limit`，内容可接受但压缩偏激进，
   Step 4 回归时再看。
 - 测试：138 passed + 1 skipped（Step 4 兼容层删除提醒）。
+
+## Day 5 Step 3：语用省略 + unsafe_omission（已完成）
+
+- prompt v5 加省略规则：日常场景可省主语/重复信息/指代；正式场景禁止；comfort 不省
+  “我在 / 听着呢”这类支撑性表达；省略必须满足“上文出现过、指代无歧义、kept_facts 不省”。
+- 治理层 `check_omissions`：检查 `kept_facts` 中的具体时间/日期/数字实体 + raw 中被删的
+  具体 span；缺失记 `unsafe_omission`，部分记 `partial_omission`，只进 risk_flags，不阻断。
+- 上下文窗口 `govern.omission_context_turns=4`。
+- **第一版逐句骨架比对误报严重**（e001 7 条、probe_031 4 条、probe_008 2 条），把同义改写
+  当成省略；已收窄为“具体实体”口径（ADR-012）。抽象名词/动词的省略留给人工评估。
+- 4 条验证（真实 deepseek-flash，`--no-cache`）：
+
+| 样本 | scene | 消息 | omission |
+|---|---|---|---|
+| e001 | casual | 3 条（18/13/11） | clean |
+| probe_031 | comfort / weak | 2 条（7/14） | clean |
+| probe_008 | comfort / weak | 2 条（13/12） | clean |
+| probe_025 | work | 1 条（13，noop） | clean |
+
+- 遗留：e001 的 `kept_facts` 仍写抽象概括（“评估核心诉求”），Step 4 先修 fact 粒度，
+  再谈 ratio 阈值。
+- 测试：148 passed + 1 skipped。
+
+## 已知约束
 
 - git 已装（2.56.1），首次提交 `b226712`，作者 `sssyz27 <3064705887@qq.com>`；未配 remote。
 - `pip install -e .` 在构建隔离阶段可能卡住，用 `--no-build-isolation` 绕过。
