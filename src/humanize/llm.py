@@ -344,15 +344,11 @@ class MockClient:
         }
 
     def _ai_smell(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        findings = self._lexicon.scan(payload["raw_reply"])
-        hits = [
-            {"type": finding.type.value, "span": finding.span, "severity": finding.severity}
-            for finding in findings
-        ]
+        # Rules are applied by the pipeline before the LLM; the mock adds nothing
+        # semantic, so it returns an empty extras list (same contract as v2 prompt).
         return {
-            "score": round(self._lexicon.score(findings), 3),
-            "hits": hits,
-            "notes": f"rules-only mock, lexicon={self._lexicon.version}",
+            "extra_hits": [],
+            "notes": f"mock: rules-only baseline, lexicon={self._lexicon.version}",
         }
 
     # -- rewrite ----------------------------------------------------------- #

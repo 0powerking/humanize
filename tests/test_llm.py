@@ -45,13 +45,12 @@ def test_mock_signal_payloads_are_parseable(lexicon: Lexicon) -> None:
         assert isinstance(data, dict)
 
 
-def test_mock_ai_smell_uses_lexicon(lexicon: Lexicon) -> None:
+def test_mock_ai_smell_returns_no_extras(lexicon: Lexicon) -> None:
+    # v2 contract: rules are applied by the pipeline, the model only adds extras.
     data = parse_json_object(_call(MockClient(lexicon=lexicon), "signal.ai_smell").text)
 
-    types = {hit["type"] for hit in data["hits"]}
-    assert "enumeration" in types
-    assert "service_tone" in types
-    assert data["score"] == 0.5
+    assert data["extra_hits"] == []
+    assert "lexicon=lex.v1" in data["notes"]
 
 
 def test_mock_rejects_unknown_prompt(lexicon: Lexicon) -> None:

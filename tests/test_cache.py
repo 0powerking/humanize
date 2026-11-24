@@ -60,6 +60,32 @@ def test_signal_fingerprint_ignores_provenance(pipeline, sample) -> None:
     assert signal_fingerprint(signals) == signal_fingerprint(reprovenanced)
 
 
+def test_rewrite_view_strips_diagnostic_prose(pipeline, sample) -> None:
+    record = pipeline.run(sample("e002_sarcasm_late"))
+    view = record.signals.rewrite_view()
+
+    assert "reason" not in view["sarcasm"]
+    assert "evidence" not in view["sarcasm"]
+    assert "cues" not in view["emotion"]
+    assert "notes" not in view["ai_smell"]
+    # The fields the rewriter actually uses are still there.
+    assert view["sarcasm"]["label"] == "sarcastic"
+    assert view["emotion"]["assistant_tone_target"] == "banter"
+
+
+def test_signal_fingerprint_ignores_diagnostic_prose(pipeline, sample) -> None:
+    record = pipeline.run(sample("e002_sarcasm_late"))
+    signals = record.signals
+
+    rephrased = signals.model_copy(
+        update={
+            "sarcasm": signals.sarcasm.model_copy(update={"reason": "完全不同的解释文字"}),
+            "ai_smell": signals.ai_smell.model_copy(update={"notes": "完全不同的备注"}),
+        }
+    )
+    assert signal_fingerprint(signals) == signal_fingerprint(rephrased)
+
+
 def test_signal_fingerprint_tracks_signal_content(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
     signals = record.signals

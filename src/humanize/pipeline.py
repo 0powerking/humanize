@@ -25,6 +25,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from .ai_smell import merge_ai_smell, rule_hits_payload
 from .cache import signal_fingerprint
 from .config import ModelRoute, PersonaBook, PipelineConfig
 from .cost import estimate_cost
@@ -33,6 +34,7 @@ from .lexicon import Lexicon
 from .llm import LLMClient, LLMResult, parse_json_object
 from .schemas import (
     SCHEMA_VERSION,
+    AiSmellExtra,
     AiSmellSignal,
     AiSmellType,
     AuditLog,
@@ -153,6 +155,11 @@ class HumanizePipeline:
 
     def _signals(self, inp: RunInput) -> tuple[SignalBundle, int, list[LLMResult]]:
         started = time.perf_counter()
+        try:
+            rule_findings = self.lexicon.scan(inp.raw_reply)
+        except Exception:
+            rule_findings = None
+
         base: dict[str, Any] = {
             "context": inp.context.model_dump(mode="json"),
             "raw_reply": inp.raw_reply,
@@ -164,7 +171,14 @@ class HumanizePipeline:
             (
                 "ai_smell",
                 "signal.ai_smell",
-                {**base, "lexicon": self.lexicon.to_payload()},
+                {
+                    **base,
+                    "lexicon": self.lexicon.to_payload(),
+                    # Rules run first; the LLM is told what is already covered.
+                    "rule_hits": (
+                        rule_hits_payload(rule_findings) if rule_findings is not None else []
+                    ),
+                },
             ),
         )
 
@@ -198,20 +212,32 @@ class HumanizePipeline:
                 assistant_tone_target=ToneTarget.matter_of_fact,
             )
 
-        ai_smell = self._as(AiSmellSignal, outcomes["ai_smell"])
-        if ai_smell is not None:
-            # Models hallucinate spans; a hit whose span is not in the reply cannot
-            # be audited, so drop it instead of pretending it exists.
-            ai_smell = self._drop_unknown_spans(ai_smell, inp.raw_reply)
-        if ai_smell is None:
+        if rule_findings is None:
             degraded.add("ai_smell")
             # Deliberately above the rewrite gate: when we cannot tell whether the
             # reply is AI-flavoured, prefer rewriting over letting it through.
             ai_smell = AiSmellSignal(
                 score=self.cfg.thresholds.signal_failure_default_ai_smell,
                 hits=(),
-                notes="ai_smell failed; conservative default",
+                notes="lexicon scan failed; conservative default",
             )
+        else:
+            extra = self._as(AiSmellExtra, outcomes["ai_smell"])
+            if extra is None:
+                degraded.add("ai_smell_llm")
+                ai_smell = merge_ai_smell(
+                    inp.raw_reply,
+                    rule_findings,
+                    (),
+                    model_notes="llm unavailable; rules only",
+                )
+            else:
+                ai_smell = merge_ai_smell(
+                    inp.raw_reply,
+                    rule_findings,
+                    extra.extra_hits,
+                    extra.notes,
+                )
 
         persona_state: PersonaState = self.personas.resolve(inp.persona.persona_id)
 
@@ -285,15 +311,6 @@ class HumanizePipeline:
 
         output = self._audit_rewrite(inp, output, allow_noop, max_ratio)
         return output, tuple(sorted(degraded)), outcome.result
-
-    @staticmethod
-    def _drop_unknown_spans(signal: AiSmellSignal, raw_reply: str) -> AiSmellSignal:
-        kept = tuple(hit for hit in signal.hits if hit.span in raw_reply)
-        dropped = len(signal.hits) - len(kept)
-        if dropped == 0:
-            return signal
-        note = f"{signal.notes} | dropped {dropped} hit(s) with span not in raw_reply"
-        return signal.model_copy(update={"hits": kept, "notes": note.strip(" |")})
 
     @staticmethod
     def _audit_rewrite(

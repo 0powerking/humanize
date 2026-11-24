@@ -27,3 +27,6 @@ pytest-of-*/
 
 # variance reports (regenerable, contain model output)
 data/variance/
+
+# fusion acceptance reports
+data/fusion/

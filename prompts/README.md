@@ -9,7 +9,7 @@ Day 3–5 会在同一位置迭代内容（并 bump 版本），文件数不增�
 |---|---|---|---|
 | `signal_sarcasm.md` | `signal.sarcasm` | v0 已上线 | Day 4 结合评估集调三态/置信度 |
 | `signal_emotion.md` | `signal.emotion` | v0 已上线 | Day 4 调 tone 映射 |
-| `signal_ai_smell.md` | `signal.ai_smell` | v0 已上线 | Day 3 规则 + LLM 融合 |
+| `signal_ai_smell.md` | `signal.ai_smell` | v2 已上线 | 规则锚点 + LLM 只补语义缺口（ADR-009） |
 | `rewrite.md` | `rewrite` | v0 已上线 | Day 5 调 gate 与长度 |
 | `rewrite_local.md` | `rewrite.local` | 未实现 | 阶段 1.5 |
 | `judge_ab.md` | `judge.ab` | 未实现 | Day 9（可选，仅辅助） |

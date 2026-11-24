@@ -20,7 +20,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 |---|---|---|---|
 | 1 | 仓库骨架、契约、config、JSONL IO、CLI、Mock 端到端、缓存键 | `pytest` 绿；产出完整 run record | ✅ |
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
-| 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | 规则 fixture ✅；LLM 融合待做 |
+| 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：78 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、成本、seed
+- `tests/`：85 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、成本、seed、融合
 
 ## Day 2 下半段进度
 
@@ -85,6 +85,22 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
   - 7 个类型逐项 100% 命中
 - 结论：规则层能稳定覆盖有标记的套路；剩下 3 条“正确废话/空泛安慰/鸡汤排比”没有词面标记，
   必须靠 LLM 语义判断。Day 3 下半段只补这一类，不重写规则层。
+
+## Day 3 下半段：规则 + LLM 融合
+
+- prompt 升 `sig.ai_smell.v2`：输入 `rule_hits`，只输出 `extra_hits`；不重复规则命中。
+- `src/humanize/ai_smell.py`：同 span 规则优先、LLM 类型记 `alt_type` 进 notes；重叠记
+  `overlap_skipped`；非法 span 丢弃；score 由合并结果重算；LLM 失败回退纯规则并记
+  `ai_smell_llm`。
+- `scripts/ai_smell_fusion_check.py` 真实模型验收（20 条，deepseek-flash）：
+  - gap 命中 **3/3**（软目标 ≥2）
+  - clean 新增误报 **0/7**（硬约束）
+  - 规则命中丢失 **0/10**（硬约束）
+  - 成本 0.0452 元
+- 额外修正：`rewrite_view` 剔除 `evidence/reason/cues/notes` 等诊断性自由文本，
+  避免模型措辞漂移污染信号指纹；完整内容仍在 `RunRecord.signals`。
+- 全管线真实跑通：e002 冷跑 ai_smell 0.875（规则 5 条 + LLM 补 1 条语义套路、1 条重叠跳过），
+  热跑 4 次缓存命中、成本 0。
 
 ## 已知约束
 

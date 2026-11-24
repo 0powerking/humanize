@@ -13,6 +13,7 @@ tune it against eval-set hits, not by intuition.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -86,7 +87,7 @@ class Lexicon:
         return findings
 
     def score(self, findings: list[Finding]) -> float:
-        return min(1.0, sum(f.severity for f in findings) / _SEVERITY_TOTAL)
+        return score_severities(finding.severity for finding in findings)
 
     def to_payload(self) -> dict[str, Any]:
         """JSON-safe form, injected into prompts and used by the mock client."""
@@ -102,6 +103,11 @@ class Lexicon:
                 for entry in self.entries
             ],
         }
+
+
+def score_severities(severities: Iterable[int]) -> float:
+    """Single scoring function for rule hits and LLM extras alike."""
+    return min(1.0, sum(severities) / _SEVERITY_TOTAL)
 
 
 def load_lexicon(path: str | Path) -> Lexicon:

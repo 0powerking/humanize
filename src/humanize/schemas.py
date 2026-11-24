@@ -155,6 +155,19 @@ class AiSmellSignal(FrozenModel):
     notes: str = ""
 
 
+class AiSmellExtra(StrictModel):
+    """Internal LLM response for ai-smell fusion: only hits the rules missed.
+
+    Not part of ``RunRecord``; the pipeline merges it into ``AiSmellSignal``.
+    ``extra="ignore"`` because models tend to add an unrequested ``score`` field.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    extra_hits: tuple[AiSmellHit, ...] = ()
+    notes: str = ""
+
+
 class PersonaTraits(FrozenModel):
     warmth: float = Field(default=0.5, ge=0.0, le=1.0)
     playfulness: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -195,17 +208,24 @@ class SignalBundle(FrozenModel):
     meta: SignalMeta
 
     def rewrite_view(self) -> dict[str, Any]:
-        """The only signal content the rewrite stage consumes.
+        """The signal content the rewrite stage consumes.
 
-        Provenance (``meta.*``) is excluded on purpose: the rewriter does not
-        need to know which model produced the signals, and including it would
-        make the cache key depend on that provenance instead of on content.
-        Used by both the rewrite payload and ``signal_fingerprint`` (ADR-004).
+        Diagnostic prose (evidence/reason/cues/notes) is stripped: it is useful
+        for audit but is model-generated free text that varies between runs, so
+        keeping it in the rewrite payload would churn the cache without changing
+        what the rewriter needs (ADR-004). The full signals stay in RunRecord.
         """
+        sarcasm = self.sarcasm.model_dump(mode="json")
+        sarcasm.pop("reason", None)
+        sarcasm.pop("evidence", None)
+        emotion = self.emotion.model_dump(mode="json")
+        emotion.pop("cues", None)
+        ai_smell = self.ai_smell.model_dump(mode="json")
+        ai_smell.pop("notes", None)
         return {
-            "sarcasm": self.sarcasm.model_dump(mode="json"),
-            "emotion": self.emotion.model_dump(mode="json"),
-            "ai_smell": self.ai_smell.model_dump(mode="json"),
+            "sarcasm": sarcasm,
+            "emotion": emotion,
+            "ai_smell": ai_smell,
             "persona_state": self.persona_state.model_dump(mode="json"),
         }
 

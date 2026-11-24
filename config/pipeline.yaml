@@ -30,7 +30,7 @@ models:
 prompt_versions:
   signal.sarcasm: sig.sarcasm.v1
   signal.emotion: sig.emotion.v1
-  signal.ai_smell: sig.ai_smell.v1
+  signal.ai_smell: sig.ai_smell.v2
   rewrite: rw.v1
 
 thresholds:

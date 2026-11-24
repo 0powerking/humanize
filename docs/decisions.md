@@ -75,6 +75,9 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
   四个语义块；重写 payload 和 `signal_fingerprint` **用同一个视图**。
 - `meta` 不再进入重写 prompt：模型名、prompt 版本、降级标记对改写没有信息价值，
   放进去只会让缓存键依赖"谁产出的信号"而不是"信号说了什么"。
+- `rewrite_view` 同时剔除诊断性自由文本（`evidence / reason / cues / notes`）：这些是
+  模型生成的解释，运行间会措辞漂移，对改写没有用处，却会让指纹抖动。完整内容仍保留在
+  `RunRecord.signals` 里供审计（ADR-009 融合后 `notes` 更长，这一点尤其重要）。
 - 因此**换模型但信号内容相同 → 命中**；content 变了 → miss。代价是失去按模型分区，
   由 `config_hash` + `versions` 承担可追溯性。
 - provenance 仍写进 `RunRecord`；命中缓存时 `meta.cache_source_models` 记录缓存条目的
@@ -183,7 +186,57 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 缓存命中的语义是“标签级判断一致”，连续值差异不影响复用；重写层看到的是**当前**连续值，
 不是缓存时的旧值。代价：失去“连续值也完全一致”的严格性，换来可用的命中率。
 
+**备选 A（若 Day 4 复核发现 label 也抖，按此切换，不要临时设计）**：
+
+1. 新增 `fingerprint_view(signals)`：在 `rewrite_view` 基础上把连续值分桶——
+   `valence` / `arousal` 分 5 档（`(-1,-0.6] (-0.6,-0.2] (-0.2,0.2] (0.2,0.6] (0.6,1]`），
+   `confidence` 分 3 档（`<0.6 / 0.6–0.8 / >=0.8`）；label、tone、target、
+   `ai_smell` 类型集合、persona 档位照旧进入。
+2. `rewrite_view` 继续把**精确**连续值传给 prompt；只把 `signal_fingerprint` 换成
+   `fingerprint_view`。
+3. 单元测试：同桶不同值 → 同指纹；跨桶 → 不同指纹；label 变化 → 不同指纹；
+   e002 三次运行必须落在同一桶。
+4. 如果分桶后 label 仍然抖，在信号层加“3 次多数投票”（Day 4），不再继续调指纹；
+   投票结果写入 `RunRecord.meta` 供审计。
+
 **代价**：评估从“跑一次”变成“跑三次取均值”，时间 ×3；换来的是结论不依赖单次采样运气。
+
+---
+
+## ADR-009 ai_smell 融合：规则锚点 + LLM 只补语义缺口
+
+**背景**：规则词典在 20 条 fixture 上 10/10 召回、0/7 误报，但语义召回只有 76.9%——
+“正确废话 / 空泛安慰 / 鸡汤排比”没有词面标记。让 LLM 直接重打一遍分会丢掉规则的
+可复现性，也可能用更贵的判断覆盖更便宜的正确判断。
+
+**决策**：
+1. 管线**永远先跑规则** `lexicon.scan()`，把 `rule_hits` 放进 prompt；
+   `signal.ai_smell` v2 只输出 `extra_hits`（规则未覆盖的语义命中）。
+2. 合并规则：
+   - 同 span、不同 type：**规则优先**，LLM 的 type 记为
+     `alt_type: span='…' rule=… llm=…` 写进 `notes`，**不进 `hits`**；
+   - 同 span、同 type：普通重复，直接丢弃；
+   - 不同 span 但字符区间重叠：规则优先，记 `overlap_skipped`；
+   - span 不是原文子串：丢弃（幻觉防护）。
+3. **score 由合并后的 hits 用同一公式重算**（`sum(severity)/8`），不信任模型自报。
+4. LLM 失败/格式错：只用规则，`meta.degraded` 记 `ai_smell_llm`，不阻断。
+5. 诊断性自由文本（`evidence/reason/cues/notes`）不进 `rewrite_view`，避免模型措辞
+   抖动污染缓存；完整内容仍保留在 `RunRecord.signals` 里供审计。
+
+**验收（2026-11-24，20 条 fixture，真实 deepseek-flash）**：
+
+| 指标 | 结果 | 口径 |
+|---|---|---|
+| gap 命中 | 3/3 | 软目标 ≥2/3 |
+| clean 新增误报 | 0/7 | **硬约束，必须为 0** |
+| 规则命中丢失 | 0/10 | 硬约束 |
+| 成本 | 0.0452 元 | 20 次 ai_smell 调用 |
+
+**为什么 clean 误报是硬约束**：套路化表达频率 = 命中回复数 / 总回复数；误报直接推高这个
+指标，会让“管线降低了 AI 味”的结论失真。gap 漏检只是召回问题，可以在报告里如实写覆盖率。
+
+**代价**：每次 ai_smell 多一次 LLM 调用；`alt_type` 只记录不参与评分，若以后要评估
+“类型冲突率”，需要单独统计 notes 里的 `alt_type_count`。
 
 ---
 
