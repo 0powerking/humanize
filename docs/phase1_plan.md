@@ -104,20 +104,27 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 
 ## Day 4 探针数据（待跑）
 
-- `data/probe/stability_probe.jsonl`：30 条，5 场景各 6 条；`source=synthetic`，
-  `probe_` 前缀，单独目录，不与 `data/eval` 混。
-- `data/probe/manifest.json`：`intended_sarcasm` / `intended_emotion` 与备注，用于覆盖审查。
+- `data/probe/stability_probe.jsonl`：32 条 = 30 条 base（5 场景各 6 条）+ 2 条 supplemental
+  （`probe_031` 生气 / `probe_032` 期待）；`source=synthetic`，`probe_` 前缀，单独目录。
+- `manifest.json`：新增 `cohort`、`sarcasm_strength`；95% 判断只用 base，补充样本只观察。
 - `scripts/probe_report.py` 校验（零成本）：
 
 ```
-banter 3/3/6, boundary 3/3/6, casual 3/3/6, comfort 2/4/6, work 3/3/6
-total 14 sarcastic / 16 literal
+scene       base_sc  base_lit  supp  total
+banter            3         3     0      6
+boundary          3         3     0      6
+casual            3         3     1      7
+comfort           2         4     1      7
+work              3         3     0      6
+total            14        16     2     32
 ```
 
-- 16 条 literal 中 8 条为“平静/日常”，其余覆盖失落、焦虑、疲惫、开心、尴尬等；
-  固定情绪集合 10 类里覆盖 8 类（缺生气、期待，探针阶段可接受）。
-- 待跑：每条 3 次信号采样，统计 `sarcasm.label`、`emotion.label`、`tone`、`ai_smell` 类型集合
-  的逐字段一致率；≥95% 临时切方案 B，<95% 走方案 A 分桶（ADR-008）。
+- 情绪覆盖 10/10：平静 8、不满 13、失落 2、委屈 1、焦虑 1、疲惫 1、开心 3、尴尬 1、
+  生气 1、期待 1。
+- comfort 反讽子组单列：`probe_008`（weak，被动攻击）与 `probe_011`（strong，反话）；
+  探针跑批时单独算这两条的 3/3 一致率，不并入其它场景。
+- 待跑：32 × 3 次信号采样；`sarcasm.label`、`emotion.label`、`tone`、`ai_smell` 类型集合
+  逐字段一致率；base ≥95% 临时切方案 B，<95% 走方案 A 分桶（ADR-008）。
 
 ## 已知约束
 

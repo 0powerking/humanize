@@ -7,8 +7,9 @@
 并且在拿不准的时候**允许不改**。
 
 > 当前状态：**第 1 阶段 / Day 4 探针就绪**。管线、真实 client、缓存、成本、seed、ai_smell 融合
-> 均已完成（规则 10/10、融合 gap 3/3、clean 0 FP）。30 条稳定性探针已提交：5 场景各 6 条，
-> 反讽/非反讽 14/16，`scripts/probe_report.py` 校验通过；**尚未跑 3 次信号采样**。
+> 均已完成（规则 10/10、融合 gap 3/3、clean 0 FP）。稳定性探针 32 条 = 30 条 base
+> （5 场景各 6 条，反讽/非反讽 14/16）+ 2 条补充（生气/期待，不计入 95% 判断）；
+> comfort 的 2 条反讽按 weak/strong 单列。`scripts/probe_report.py` 校验通过，**尚未跑 3 次信号采样**。
 > 默认仍走 `--provider mock`；仓库只有 4 条 synthetic smoke 样例，**还没有评估集**。
 
 ---
@@ -80,7 +81,7 @@ python scripts/probe_report.py                                        # 稳定�
 跑测试：
 
 ```powershell
-python -m pytest        # 88 passed
+python -m pytest        # 90 passed
 python -m ruff check src tests
 ```
 
@@ -127,9 +128,9 @@ src/humanize/
   cache.py                 # 缓存键 / 信号指纹（Day 2 接上磁盘缓存）
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
-data/probe/stability_probe.jsonl  # 30 条稳定性探针（5 场景 ×6，非评估集）
+data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 88 条测试
+tests/                          # 90 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -195,7 +196,7 @@ docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字�
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | ✅ 规则 10/10、融合 gap 3/3、clean 0 FP |
-| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 探针数据 ✅（30 条）；3 次信号采样待跑 |
+| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 探针数据 ✅（32 条）；3 次信号采样待跑 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
 | 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |
