@@ -384,6 +384,20 @@ comfort 不省支撑性表达），并要求治理层检查 `unsafe_omission`。
 4. 上下文窗口 `govern.omission_context_turns=4`，可配置。
 5. 检查结果只进 `risk_flags` + 审计细节，不自动改写。
 
+**覆盖边界（Day 8 报告必须原样写）**：`unsafe_omission` 规则检查**只覆盖具体实体省略
+（时间/日期/数字/金额）**；主语省略、指代省略、重复信息省略**不进入规则检查**，由 prompt 规则
+和人工「省略自然度」指标兜底。因此“规则 clean”**不等于**“所有省略都安全”，报告不得把
+“省略安全性 100% clean”写成全局结论。
+
+**不引入分词/POS（已知局限 + 为什么不做）**：分词能扩大名词/动词覆盖，但仍无法区分
+“同义改写”和“省略”（第一版逐句比对已经证明），还会引入依赖与新的边界错误。规则层只做
+高精度子集，召回缺口由人工评估补位；这是 conscious trade-off，不是遗漏。
+
+**boundary 场景不做规则检查**：prompt v5/v6 已禁止 work/boundary 省略，规则再查是冗余；
+改为统计 boundary 场景的**省略/压缩次数**（消息数、final_text/raw 长度比、被删具体 span 数）
+作为 prompt 遵守率指标。模型在禁止场景频繁省略，比 `unsafe_omission` 更能说明 prompt 有问题。
+Step 4 回归时计算这组统计。
+
 **4 条验证（prompt v5，真实 deepseek-flash，`--no-cache`）**：
 
 | 样本 | scene | 消息 | omission |
@@ -396,6 +410,48 @@ comfort 不省支撑性表达），并要求治理层检查 `unsafe_omission`。
 **遗留问题**：e001 的 `kept_facts` 仍然写成“评估核心诉求/观察市场机会/做好财务缓冲”这类抽象概括，
 没有按 prompt 要求列具体实体；Step 4 的“kept_facts 保留率”因此会偏噪声。Step 3 不继续磨 prompt，
 留到 Step 4 与 ratio 一起看。
+
+---
+
+## ADR-013 kept_facts 必须通过“具体锚点测试”（Day 5 Step 4-1）
+
+**背景**：Step 3 实测 e001 的 `kept_facts` 是“评估核心诉求/观察市场机会/做好财务缓冲”这类抽象概括。
+这会让 Step 4 的“kept_facts 保留率”变成噪声：“评估核心诉求 → 看看自己最想要啥”算保留还是丢失，
+没有可执行边界；ratio 口径也就无法落地。
+
+**决策**：
+1. `kept_facts` 每项必须通过具体锚点测试：包含**时间/日期/数字/金额**标记，或在原文里能找到
+   **字面片段**；否则不算 kept_fact。
+2. 抽象概括放新字段 `semantic_points`（最多 4 条），不参与保留率与省略检查。
+3. 管线兜底：模型仍把抽象项写进 `kept_facts` 时，`_normalize_kept_facts` 自动移到
+   `semantic_points`，并记 `kept_facts_demoted` 到 `risk_flags`（审计可见）。
+4. schema 加 `semantic_points` 字段，版本升到 `1.2`；prompt v6 明确两项的区别与输出。
+5. “近义锚点”暂不实现：只接受字面片段或具体标记；这是高精度选择，避免又回到同义改写误判。
+
+**验证**：e001 真实跑批（prompt v6）：
+
+```
+kept_facts: ['换个工作', '观察市场机会', '做好财务缓冲']
+semantic_points: ['换工作不一定是坏事', '先想清楚自己要什么', ... '评估核心诉求']
+flags: kept_facts_demoted, rewrite_ratio_over_limit
+```
+
+模型仍把部分抽象项混进 kept_facts 时，管线会移到 semantic_points；最终记录里两者边界清楚。
+
+**已知风险**：“观察市场机会/做好财务缓冲”是字面片段，但语义偏概括；锚点测试只能保证
+“原文有字面依据”，不能保证“语义具体”。Step 4 看保留率时按 `kept_facts` 原始条目报，
+不要二次解释。
+
+---
+
+## Step 4 执行顺序（按此提交，不合并）
+
+1. **kept_facts 粒度**（本 commit）：锚点测试 + `semantic_points` + 管线降级。
+2. **删兼容层**：单独 commit，去掉 skip 测试、去掉 `text` 包装；旧形状必须报错。
+3. **回归**：32 条探针 + 4 条 seed，记录 `kept_facts` 保留率、ratio、boundary 省略统计。
+4. **统一判定**：ratio + kept_facts 保留率 + boundary 省略统计三者一起看；不凭单指标调 prompt。
+
+顺序不能反：兼容层删除和 kept_facts 修正混在一起，回归出问题无法归因。
 
 ---
 

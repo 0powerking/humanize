@@ -49,6 +49,11 @@ def _is_concrete(text: str) -> bool:
     return bool(_CONCRETE_RE.search(text))
 
 
+def has_concrete_anchor(text: str) -> bool:
+    """True when a kept fact contains a time/date/number/money marker."""
+    return _is_concrete(text)
+
+
 def _concrete_spans(text: str) -> list[str]:
     return list(dict.fromkeys(match.group(0) for match in _CONCRETE_RE.finditer(text)))
 

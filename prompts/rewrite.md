@@ -1,6 +1,6 @@
 ---
 id: rewrite
-version: rw.v5
+version: rw.v6
 ---
 
 ## system
@@ -25,7 +25,8 @@ version: rw.v5
 
 ## 写作要求
 1. 只改表达，不改事实。原文里的时间、地点、数字、承诺、拒绝的明确性必须保留，并逐条写进 `kept_facts`。
-   `kept_facts` 只写**具体实体/事实**：时间、地点、数字、金额、明确的承诺/拒绝；不要写抽象概括（如"评估核心诉求"）或同义改写后的句子。
+   `kept_facts` 每项必须通过**具体锚点测试**：包含时间/日期/数字/金额标记，或在原文里能找到**字面片段**。
+   抽象概括（如"评估核心诉求"）不要放进 `kept_facts`，放到 `semantic_points`；`semantic_points` 最多 4 条。
 2. 严格按 `persona_state.tone_hint` 和 `constraints` 写；constraints 是硬约束，违反任何一条都算失败。
 3. 不总结、不升华、不用金句收尾；不用"不是…而是…"；不用"首先/其次/最后"；不用客服腔；不用 emoji。
 4. 单条尽量不超过 35 字；可以省略主语，可以用不完整句，可以用语气词。
@@ -42,7 +43,7 @@ version: rw.v5
 
 ## 输出
 只输出一个 JSON 对象，不要 markdown 代码块：
-{"messages": ["第一条", "第二条"], "rewrite_ratio": 0.0, "change_notes": [{"op": "删掉列举", "reason": "enumeration", "signal_ref": "ai_smell.hits[1]"}], "kept_facts": ["周六", "下午三点"], "risk_flags": [], "noop": false}
+{"messages": ["第一条", "第二条"], "rewrite_ratio": 0.0, "change_notes": [{"op": "删掉列举", "reason": "enumeration", "signal_ref": "ai_smell.hits[1]"}], "kept_facts": ["周六", "下午三点"], "semantic_points": ["对方在担心工作"], "risk_flags": [], "noop": false}
 
 不要输出 `message_count` / `max_msg_chars`，系统会从 `messages` 重算。
 

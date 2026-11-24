@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 
 def recompute_counts(messages: Sequence[str]) -> tuple[int, int]:
@@ -275,6 +275,7 @@ class RewriteOutput(StrictModel):
     rewrite_ratio: float = Field(ge=0.0, le=1.0)
     change_notes: tuple[ChangeNote, ...] = ()
     kept_facts: tuple[str, ...] = ()
+    semantic_points: tuple[str, ...] = ()
     risk_flags: tuple[str, ...] = ()
     noop: bool = False
 
@@ -304,7 +305,6 @@ class RewriteOutput(StrictModel):
     @property
     def text(self) -> str:
         return "\n".join(self.messages)
-
 
 # --------------------------------------------------------------------------- #
 # Stage 4 governance
@@ -372,7 +372,7 @@ class Versions(StrictModel):
 
 
 class RunRecord(StrictModel):
-    schema_version: Literal["1.1"] = SCHEMA_VERSION
+    schema_version: Literal["1.2"] = SCHEMA_VERSION
     run_id: str
     sample_id: str
     created_at: str

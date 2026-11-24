@@ -77,6 +77,7 @@ def test_text_property_survives_replay_without_text_field() -> None:
 
     assert "text" not in output.model_dump()
     assert output.text == "加载\n后仍可读"
+    assert output.semantic_points == ()
 
 
 @pytest.mark.skip(reason="compat shim stays until Step 4; unskip when it is removed")

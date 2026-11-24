@@ -32,7 +32,7 @@ from .cost import estimate_cost
 from .io import git_commit, now_iso, stable_hash
 from .lexicon import Lexicon
 from .llm import LLMClient, LLMResult, parse_json_object
-from .omission import check_omissions
+from .omission import check_omissions, has_concrete_anchor
 from .schemas import (
     SCHEMA_VERSION,
     AiSmellExtra,
@@ -371,6 +371,40 @@ class HumanizePipeline:
         )
         return output, tuple(sorted(degraded)), outcome.result
 
+    @staticmethod
+    def _normalize_kept_facts(inp: RunInput, output: RewriteOutput) -> RewriteOutput:
+        """Keep only facts with a concrete anchor; move abstractions aside.
+
+        A fact passes when it has a time/date/number/money marker or appears
+        literally in the raw reply. Abstract summaries ("评估核心诉求") fail both
+        and go to ``semantic_points`` so the retention metric stays meaningful.
+        """
+        concrete: list[str] = []
+        demoted: list[str] = []
+        for fact in output.kept_facts:
+            cleaned = fact.strip()
+            if not cleaned:
+                continue
+            if has_concrete_anchor(cleaned) or cleaned in inp.raw_reply:
+                concrete.append(cleaned)
+            else:
+                demoted.append(cleaned)
+
+        if not demoted:
+            return output
+
+        return output.model_copy(
+            update={
+                "kept_facts": tuple(concrete),
+                "semantic_points": tuple(
+                    dict.fromkeys((*output.semantic_points, *demoted))
+                ),
+                "risk_flags": tuple(
+                    dict.fromkeys((*output.risk_flags, "kept_facts_demoted"))
+                ),
+            }
+        )
+
     def _audit_rewrite(
         self,
         inp: RunInput,
@@ -386,6 +420,7 @@ class HumanizePipeline:
         * a gate-permitted, AI-smell-free, trivial edit is a no-op.
         Both corrections are recorded in ``risk_flags``.
         """
+        output = self._normalize_kept_facts(inp, output)
         flags = list(output.risk_flags)
         messages = list(output.messages)
 
@@ -501,7 +536,10 @@ class HumanizePipeline:
 
         omission_flags: tuple[str, ...] = ()
         omission_details: tuple[str, ...] = ()
-        if policy.omission_check:
+        # Formal scenes are governed by the prompt rule; the rule-based check is
+        # skipped and their omission rate is tracked as a prompt-quality metric
+        # in the Step 4 regression instead (ADR-012).
+        if policy.omission_check and inp.context.scene.value not in {"work", "boundary"}:
             context_texts = tuple(
                 turn.content for turn in inp.context.turns[-policy.omission_context_turns :]
             )
@@ -523,6 +561,11 @@ class HumanizePipeline:
             f"{'allow_noop' if gate_passed else 'rewrite'}",
             f"rewrite: noop={rewrite.noop} ratio={rewrite.rewrite_ratio:.2f} "
             f"notes={len(rewrite.change_notes)} risk={len(rewrite.risk_flags)}",
+            (
+                "kept_facts: abstract items moved to semantic_points"
+                if "kept_facts_demoted" in rewrite.risk_flags
+                else "kept_facts: all concrete"
+            ),
             (
                 f"messages: {len(rewrite.messages)} message(s) merged into final_text "
                 "for single-text downstream (phase 1)"

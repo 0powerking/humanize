@@ -312,6 +312,51 @@ def test_unsafe_omission_flows_to_risk_flags(config, personas, lexicon, client, 
     )
 
 
+def test_abstract_kept_facts_are_demoted(config, personas, lexicon, client, sample) -> None:
+    record = _pipeline(
+        MessagesClient(
+            client,
+            ["换个工作也不算啥坏事"],
+            kept_facts=["评估核心诉求", "换个工作"],
+        ),
+        config,
+        personas,
+        lexicon,
+    ).run(sample("e001_overwork_advice"))
+
+    assert record.rewrite.kept_facts == ("换个工作",)
+    assert record.rewrite.semantic_points == ("评估核心诉求",)
+    assert "kept_facts_demoted" in record.rewrite.risk_flags
+    assert any(
+        "semantic_points" in decision for decision in record.govern.audit.decisions
+    )
+
+
+def test_boundary_does_not_run_omission_rule(config, personas, lexicon, client, sample) -> None:
+    base = sample("e002_sarcasm_late")
+    boundary = RunInput.model_validate(
+        {
+            **base.model_dump(),
+            "sample_id": "boundary_omission",
+            "context": {
+                "scene": "boundary",
+                "turns": [{"role": "user", "content": "周六下午能帮我改论文吗"}],
+            },
+        }
+    )
+    record = _pipeline(
+        MessagesClient(client, ["改天吧"], kept_facts=["周六下午"]),
+        config,
+        personas,
+        lexicon,
+    ).run(boundary)
+
+    # Prompt forbids omission in formal scenes; the rule is intentionally not
+    # applied, and their omission rate is tracked separately in Step 4.
+    assert "unsafe_omission" not in record.rewrite.risk_flags
+    assert any("omission: clean" in d for d in record.govern.audit.decisions)
+
+
 def test_run_signals_returns_usage_without_rewrite(pipeline, sample) -> None:
     signals, usage = pipeline.run_signals(sample("e001_overwork_advice"))
 

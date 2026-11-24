@@ -22,7 +22,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1–3 ✅；Step 4 回归待做 |
+| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1–3 ✅；Step 4-1 ✅；删兼容层/回归待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：148 条测试 + 1 条 Step 4 提醒，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查
+- `tests/`：150 条测试 + 1 条 Step 4-2 提醒，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点
 
 ## Day 2 下半段进度
 
@@ -210,6 +210,24 @@ total            14        16     2     32
 - 遗留：e001 的 `kept_facts` 仍写抽象概括（“评估核心诉求”），Step 4 先修 fact 粒度，
   再谈 ratio 阈值。
 - 测试：148 passed + 1 skipped。
+
+## Day 5 Step 4-1：kept_facts 具体锚点（已完成）
+
+- `kept_facts` 每项必须通过具体锚点测试：时间/日期/数字/金额标记，或原文字面片段；
+  抽象概括进新字段 `semantic_points`（最多 4 条），不参与保留率与省略检查。
+- 管线 `_normalize_kept_facts` 兜底：模型仍混入抽象项时自动移到 `semantic_points`，
+  记 `kept_facts_demoted`；schema 升到 `1.2`，prompt v6 已写明两者区别。
+- e001 真实跑批（prompt v6）：
+
+```
+kept_facts: ['换个工作', '观察市场机会', '做好财务缓冲']
+semantic_points: ['换工作不一定是坏事', '先想清楚自己要什么', ..., '评估核心诉求']
+flags: kept_facts_demoted, rewrite_ratio_over_limit
+```
+
+- 已知风险：“观察市场机会/做好财务缓冲”有字面锚点但语义偏概括；锚点测试只能保证
+  “原文有依据”，Step 4 保留率按原始条目报，不二次解释。
+- 测试：150 passed + 1 skipped。
 
 ## 已知约束
 

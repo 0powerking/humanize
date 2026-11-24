@@ -28,7 +28,7 @@ def test_config_loads_with_expected_defaults(config) -> None:
 def test_config_hash_changes_when_prompt_version_bumps(config) -> None:
     # Day 2 acceptance: editing a prompt version must invalidate derived caches.
     bumped = config.model_copy(deep=True)
-    bumped.prompt_versions["rewrite"] = "rw.v6"
+    bumped.prompt_versions["rewrite"] = "rw.v7"
     assert stable_hash(config) != stable_hash(bumped)
 
 

@@ -44,7 +44,7 @@ prompt_versions:
   signal.sarcasm: sig.sarcasm.v1
   signal.emotion: sig.emotion.v1
   signal.ai_smell: sig.ai_smell.v2
-  rewrite: rw.v5
+  rewrite: rw.v6
 
 thresholds:
   # ai_smell.score 低于此值时允许"几乎不改"（rewrite gate）。
