@@ -27,7 +27,46 @@ def test_unknown_field_is_rejected() -> None:
 
 def test_noop_requires_zero_ratio() -> None:
     with pytest.raises(ValidationError):
-        RewriteOutput(text="x", rewrite_ratio=0.3, noop=True)
+        RewriteOutput(messages=("x",), rewrite_ratio=0.3, noop=True)
+
+
+def test_legacy_text_is_wrapped_into_messages() -> None:
+    output = RewriteOutput.model_validate({"text": "旧格式回复", "rewrite_ratio": 0.2})
+
+    assert output.messages == ("旧格式回复",)
+    assert output.message_count == 1
+    assert output.max_msg_chars == len("旧格式回复")
+
+
+def test_message_counts_are_recomputed_not_trusted() -> None:
+    output = RewriteOutput(
+        messages=("短", "稍微长一点"),
+        message_count=9,
+        max_msg_chars=999,
+        rewrite_ratio=0.2,
+    )
+
+    assert output.message_count == 2
+    assert output.max_msg_chars == len("稍微长一点")
+
+
+def test_messages_are_limited_to_four() -> None:
+    with pytest.raises(ValidationError):
+        RewriteOutput(
+            messages=("一", "二", "三", "四", "五"),
+            rewrite_ratio=0.1,
+        )
+
+
+def test_noop_must_be_a_single_message() -> None:
+    with pytest.raises(ValidationError):
+        RewriteOutput(messages=("一", "二"), rewrite_ratio=0.0, noop=True)
+
+
+def test_text_property_joins_messages() -> None:
+    output = RewriteOutput(messages=("第一句", "第二句"), rewrite_ratio=0.2)
+
+    assert output.text == "第一句\n第二句"
 
 
 def test_signal_bundle_is_immutable(pipeline, sample) -> None:

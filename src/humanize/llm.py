@@ -362,7 +362,9 @@ class MockClient:
 
         if constraints.get("allow_noop", False):
             return {
-                "text": raw,
+                "messages": [raw],
+                "message_count": 1,
+                "max_msg_chars": 0,
                 "rewrite_ratio": 0.0,
                 "change_notes": [],
                 "kept_facts": _FACT_RE.findall(raw),
@@ -418,7 +420,9 @@ class MockClient:
             risk_flags.append("rewrite_ratio_over_limit")
 
         return {
-            "text": text,
+            "messages": [text],
+            "message_count": 1,
+            "max_msg_chars": 0,
             "rewrite_ratio": ratio,
             "change_notes": notes,
             "kept_facts": _FACT_RE.findall(raw),

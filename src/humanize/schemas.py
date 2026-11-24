@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 class StrictModel(BaseModel):
@@ -243,18 +243,52 @@ class ChangeNote(StrictModel):
 
 
 class RewriteOutput(StrictModel):
-    text: str = Field(min_length=1, max_length=4000)
+    """One rewrite result, shaped as a burst of chat messages (Day 5, step 1).
+
+    ``message_count`` and ``max_msg_chars`` are always recomputed from
+    ``messages``; a model's self-report is overwritten. ``text`` is a read-only
+    join kept for the single-text downstream (governance/CLI/eval) until step 3
+    teaches the layer to consume ``messages`` directly.
+    """
+
+    messages: tuple[str, ...] = Field(min_length=1, max_length=4)
+    # Deliberately unconstrained: a model self-report must never fail validation,
+    # it must be overwritten by _recompute_counts.
+    message_count: int = 1
+    max_msg_chars: int = 0
     rewrite_ratio: float = Field(ge=0.0, le=1.0)
     change_notes: tuple[ChangeNote, ...] = ()
     kept_facts: tuple[str, ...] = ()
     risk_flags: tuple[str, ...] = ()
     noop: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_text(cls, data: Any) -> Any:
+        # The v1 prompt still returns {"text": ...}; step 2 switches it to
+        # {"messages": [...]}. Until then, wrap the legacy shape here.
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        legacy = data.pop("text", None)
+        if "messages" not in data and isinstance(legacy, str) and legacy:
+            data["messages"] = [legacy]
+        return data
+
     @model_validator(mode="after")
-    def _noop_keeps_ratio_zero(self) -> RewriteOutput:
-        if self.noop and self.rewrite_ratio > 1e-9:
-            raise ValueError("noop rewrite must have rewrite_ratio == 0")
+    def _recompute_counts(self) -> RewriteOutput:
+        self.message_count = len(self.messages)
+        self.max_msg_chars = max(len(message) for message in self.messages)
+        if self.noop:
+            if self.rewrite_ratio > 1e-9:
+                raise ValueError("noop rewrite must have rewrite_ratio == 0")
+            if len(self.messages) != 1:
+                raise ValueError("noop rewrite must be a single message")
         return self
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.messages)
 
 
 # --------------------------------------------------------------------------- #
@@ -323,7 +357,7 @@ class Versions(StrictModel):
 
 
 class RunRecord(StrictModel):
-    schema_version: Literal["1.0"] = SCHEMA_VERSION
+    schema_version: Literal["1.1"] = SCHEMA_VERSION
     run_id: str
     sample_id: str
     created_at: str
@@ -343,5 +377,7 @@ class RunRecord(StrictModel):
         if self.input.sample_id != self.sample_id:
             raise ValueError("sample_id does not match input.sample_id")
         if self.govern.final_text != self.rewrite.text and not self.govern.sensitive.blocked:
-            raise ValueError("final_text must equal rewrite.text unless blocked (v1 invariant)")
+            raise ValueError(
+                "final_text must equal newline-joined rewrite.messages unless blocked"
+            )
         return self

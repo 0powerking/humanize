@@ -297,19 +297,44 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 
 ---
 
-## Day 5 前置任务：节奏与语用省略（提案，未实施）
+## ADR-010 RewriteOutput 改为多消息数组（Day 5 step 1）
+
+**背景**：`RewriteOutput.text` 假设“一条输入对应一条输出”，但真人聊天是 1–4 条短消息的节奏。
+先把结构改对，再改 prompt——否则 prompt、治理、评估同时变，出问题无法归因。
+
+**决策**：
+- `messages: tuple[str, ...]`，1–4 条；`text` 变成只读属性 `"\n".join(messages)`，不序列化，
+  只服务尚未适配多消息的单文本下游。
+- `message_count` / `max_msg_chars` **由 schema validator 和管线双重重算**，输入字段不做
+  `ge/le` 约束：模型自报 9 条也不能让它校验失败，而是直接覆盖。
+- 兼容期：`{"text": "..."}` 旧形状在 `model_validator(mode="before")` 里自动包成
+  `messages=[text]`；Step 2 把 prompt 改成输出 `messages` 后，这个兼容层保留一个版本再删。
+- 治理层（Step 1）把多条用 `\n` 合并成 `final_text`，审计记
+  `messages: N message(s) merged into final_text ...`；评估层下一步直接消费 `messages`。
+- `SCHEMA_VERSION` 从 `1.0` 升到 `1.1`（删除 `text` 字段是破坏性变更）。
+- **persona / rhythm 边界**：`rhythm.target_msg_chars_p50` 优先于 persona 的 `max_chars`；
+  persona 的 `max_chars` **只约束单条消息**，不乘到分条数上。4 条 × 60 字是发小作文，
+  不是聊天——分条数由 `max_messages_per_reply` 单独管。
+
+**风险**：多消息会让下游的敏感/残留检查跨消息边界；Step 1 用 `\n` 合并后统一扫描，
+分条级检查留到 Step 3。
+
+---
+
+## Day 5 前置任务：节奏与语用省略（Step 1 已实施，其余未实施）
 
 **观察**：真人即时聊天的"人味"很大一部分来自节奏——短句、一条拆成多条发、单条很少
 超过 20 字。当前 `RewriteOutput` 只有单个 `text`，等于假设"一条输入对应一条输出"，
 结果仍然是"消息块"而不是"聊天"。
 
-**状态：未实施，现在不改 schema。** Day 5 重写层定稿前按下面三件事改：
+**状态：Step 1 已实施（`messages` + 重算 + 治理层合并）；prompt / rhythm 配置 / 省略检查未实施。**
 
-1. `RewriteOutput` 改为 `messages: list[str]`（1–4 条）；`message_count` 和
-   `max_msg_chars` 由管线从 `messages` 重算，不信任模型自报；下游不支持多条时由治理层
-   合并成一条，并在审计里记录 `merged_by_governance=true`。
+1. ✅ `RewriteOutput` 改为 `messages`（1–4 条）；`message_count`、`max_msg_chars` 重算；
+   治理层用 `\n` 合并并写审计（ADR-010）。
 2. `config` 增加 `rhythm` 段：`target_msg_chars_p50`、`p95`、`max_messages_per_reply`、
    `split_allowed_scenes`（`work`/`boundary` 等正式场景不拆）。
+   **与 persona 的边界**：`target_msg_chars_p50` 优先；persona `max_chars` 只约束单条，
+   不乘到分条数上。
 3. `prompts/rewrite.md` 增加节奏规则：日常闲聊优先拆 2–3 条短消息，每条独立可读、
    承接上一条；**不要为拆而拆**，正式场景保持单条。
 
@@ -336,6 +361,8 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 2. 治理层加“省略合法性”自动检查（规则级、零成本，和 `kept_facts` 实体比对同一层）：
    对比 raw 与 rewritten，提取被删的实体/关键词，检查是否在最近 N 轮上下文出现过；
    没出现过 → 标记 `unsafe_omission` 计入 `risk_flags`，不自动改写。
+   **检查范围**：只查 `kept_facts` 实体 + 被删的**名词/动词短语**；语气词、连接词不查
+   （否则“行吧”被删也会标记，误报率太高）。
 3. 评估加人工指标「省略自然度」1–3 分（1=省得看不懂，3=省得自然），抽 20 条，
    与「分条合理性」放**同一张盲评表**，不增加评分轮次。
 

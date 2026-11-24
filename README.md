@@ -6,11 +6,11 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 4 完成**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
-> 稳定性探针均已完成。方案 A 已实现：分桶指纹（valence/arousal 5 档、confidence 3 档）+
-> 可选 3 次多数投票（`signals.vote_runs`，运行时默认 1）。两轮 32×3 探针（`cache_hits=0`）
-> 的 `emotion.label` 3/3 在 93.3%/96.7% 间翻转，CI 覆盖 95%，因此按风险控制保留 A，
-> Day 8 用 60 条确认后再决定是否回退 B。默认仍走 `--provider mock`；还没有评估集。
+> 当前状态：**第 1 阶段 / Day 5 Step 1 完成**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
+> 稳定性探针均已完成（方案 A + `vote_runs`）。本步把 `RewriteOutput.text` 改成
+> `messages`（1–4 条），`message_count` / `max_msg_chars` 由 schema 与管线重算，
+> 治理层用 `\n` 合并为 `final_text`，schema 升到 1.1；prompt 仍是旧的 `text` 形状（有兼容层）。
+> 下一步：rhythm 配置 + prompt v1，再下一步语用省略。默认仍走 `--provider mock`；还没有评估集。
 
 ---
 
@@ -82,7 +82,7 @@ python scripts/probe_report.py                                        # 稳定�
 跑测试：
 
 ```powershell
-python -m pytest        # 124 passed
+python -m pytest        # 131 passed
 python -m ruff check src tests
 ```
 
@@ -131,7 +131,7 @@ src/humanize/
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 124 条测试
+tests/                          # 131 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -146,7 +146,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 |---|---|
 | `input` | 原始回复、上下文、人设引用、选项 |
 | `signals` | 反讽三态 + 置信度 + 证据、情绪与语气目标、AI 味命中列表、人设状态 |
-| `rewrite` | 重写正文、改动说明（每条带 `signal_ref`）、`kept_facts`、`risk_flags`、`noop` |
+| `rewrite` | `messages`（1–4 条）+ 重算的 `message_count`/`max_msg_chars`、改动说明（每条带 `signal_ref`）、`kept_facts`、`risk_flags`、`noop` |
 | `govern` | 残留命中、敏感分类、审计决策列表 |
 | `usage` / `timing` | 调用次数、token、成本、各段耗时 |
 | `versions` | git commit、config hash、prompt 版本、模型名 |
@@ -200,7 +200,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | ✅ 规则 10/10、融合 gap 3/3、clean 0 FP |
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | ✅ 探针两轮 + 方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate | 待做 |
+| 5 | 人设状态 + 重写层 v1 + gate | Step 1 ✅（messages schema）；rhythm / 省略待做 |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
 | 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 待做 |

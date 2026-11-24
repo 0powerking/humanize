@@ -349,7 +349,7 @@ class HumanizePipeline:
         if output is None:
             degraded.add("rewrite")
             output = RewriteOutput(
-                text=inp.raw_reply,
+                messages=(inp.raw_reply,),
                 rewrite_ratio=0.0,
                 risk_flags=("rewrite_failed",),
                 noop=True,
@@ -385,6 +385,8 @@ class HumanizePipeline:
                 **output.model_dump(),
                 "rewrite_ratio": actual,
                 "risk_flags": deduped,
+                "message_count": len(output.messages),
+                "max_msg_chars": max(len(message) for message in output.messages),
             }
         )
 
@@ -444,6 +446,12 @@ class HumanizePipeline:
             f"{'allow_noop' if gate_passed else 'rewrite'}",
             f"rewrite: noop={rewrite.noop} ratio={rewrite.rewrite_ratio:.2f} "
             f"notes={len(rewrite.change_notes)} risk={len(rewrite.risk_flags)}",
+            (
+                f"messages: {len(rewrite.messages)} message(s) merged into final_text "
+                "for single-text downstream (phase 1)"
+                if len(rewrite.messages) > 1
+                else "messages: single"
+            ),
             (
                 f"residue: {len(residue_hits)} hit(s); local rewrite deferred (phase 1.5)"
                 if residue_hits

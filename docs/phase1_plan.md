@@ -22,7 +22,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
+| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1 ✅；rhythm / 省略待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：124 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票
+- `tests/`：131 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息
 
 ## Day 2 下半段进度
 
@@ -151,6 +151,19 @@ total            14        16     2     32
 - Day 5 风险：probe_028（情绪）与 probe_004（语气）指向“情绪强度被低估”，重写层要有兜底；
   probe_031 的“生气→不满”是标签边界；probe_032 的期待场景 tone 待确认。
 - 详细报告：`docs/stability_probe.md`。
+
+## Day 5 Step 1：messages schema（已完成）
+
+- `RewriteOutput.messages` 1–4 条；`text` 变成 `"\n".join(messages)` 只读属性，不序列化。
+- `message_count` / `max_msg_chars` 由 schema validator 与管线双重重算；输入字段不加约束，
+  模型自报错误值也不会校验失败，只会被覆盖。
+- 旧 prompt 仍返回 `{"text": ...}`，`model_validator(mode="before")` 自动包成 messages；
+  Step 2 改 prompt 后保留一个版本再删兼容层。
+- 治理层用 `\n` 合并多条为 `final_text`，审计记 `messages: N message(s) merged ...`。
+- `SCHEMA_VERSION` 升到 `1.1`。
+- 测试：131 passed；mock e001 回归显示 `messages` 1 条、`message_count=1`、
+  `max_msg_chars=11`、`final_text` 与消息一致。
+- 未动 prompt / rhythm；Step 2 加 `rhythm` 配置与 prompt 节奏规则。
 
 ## 已知约束
 
