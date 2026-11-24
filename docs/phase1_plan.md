@@ -20,11 +20,11 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 |---|---|---|---|
 | 1 | 仓库骨架、契约、config、JSONL IO、CLI、Mock 端到端、缓存键 | `pytest` 绿；产出完整 run record | ✅ |
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
-| 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | 待做 |
+| 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | 规则 fixture ✅；LLM 融合待做 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
-| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 待做 |
+| 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
 | 9 | 盲评表 + 人工评分 + 统计 | 四指标 + CI | 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 别人 clone 后可复现 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：73 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、成本、seed
+- `tests/`：78 条测试，覆盖契约、缓存键失效与端到端重调、降级、ratio 审计、成本、seed
 
 ## Day 2 下半段进度
 
@@ -67,12 +67,24 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
   信号缓存），断言重写调用次数 1→2，第三次全命中。
 - provenance 已从重写 payload 中移除（`rewrite_view`），命中来源写入 `meta.cache_source_models`。
 - 成本 ✅：峰谷价 + provider prompt cache 命中价；`BudgetTracker` 80% 告警 / 100% 停止；
-  单条冷跑实测 0.006–0.010 元，3 次采样 0.028 元。
+  单条冷跑实测 0.0095 元，3 次采样 0.0276 元。
 - seed ✅：`signal.seed=7`、`rewrite.seed=42`，进入请求与缓存键。
 - 方差实测（ADR-008）：temp 0 两次一致；temp 0.9 同 seed 三次文本不同；temp 0 三次管线中
   sarcasm 标签稳定，但 `emotion.valence` 在 −0.6/−0.7 抖动。结论：seed 不承诺复现，
   评估按 3 次采样取均值/中位数。
-- 结果：Day 2 完成。下一阶段 Day 3（AI 味诊断）与 Day 5 前的节奏改造待开工。
+- 结果：Day 2 完成。
+
+## Day 3 上半段：规则词典 fixture
+
+- `tests/fixtures/ai_smell_cases.jsonl`：20 条（10 条规则可命中 / 7 条 clean / 3 条已知语义缺口）。
+- `tests/test_ai_smell_lexicon.py`：逐条断言期望类型、clean 零误报、gap 仍漏（作为 LLM 兜底目标）。
+- `scripts/lexicon_report.py`：零成本覆盖率报告，输出：
+  - 规则召回 10/10（100%）
+  - 语义召回 10/13（76.9%），LLM 兜底需覆盖 23.1%
+  - clean 误报 0/7
+  - 7 个类型逐项 100% 命中
+- 结论：规则层能稳定覆盖有标记的套路；剩下 3 条“正确废话/空泛安慰/鸡汤排比”没有词面标记，
+  必须靠 LLM 语义判断。Day 3 下半段只补这一类，不重写规则层。
 
 ## 已知约束
 

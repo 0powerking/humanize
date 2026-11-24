@@ -1,0 +1,20 @@
+{"id":"hit_not_x_but_y","expect":"hit","types":["not_x_but_y"],"text":"这不是钱的问题，而是信任的问题。"}
+{"id":"hit_enumeration","expect":"hit","types":["enumeration"],"text":"首先，你要冷静。其次，分析原因。最后，制定计划。"}
+{"id":"hit_golden_every","expect":"hit","types":["golden_quote"],"text":"每一次失败都是成长的机会。"}
+{"id":"hit_golden_believe","expect":"hit","types":["golden_quote"],"text":"相信自己，你一定可以的。"}
+{"id":"hit_service_formal","expect":"hit","types":["service_tone"],"text":"很高兴为您服务，请问还有什么可以帮您？"}
+{"id":"hit_service_bao","expect":"hit","types":["service_tone"],"text":"宝子，这个真的很好用哦。"}
+{"id":"hit_hedge_leading","expect":"hit","types":["hedge"],"text":"其实，这件事没有那么复杂。"}
+{"id":"hit_hedge_queshi","expect":"hit","types":["hedge"],"text":"确实，你说得有道理。"}
+{"id":"hit_over_explain","expect":"hit","types":["over_explain"],"text":"从另一个角度来看，这也是好事。"}
+{"id":"hit_parallelism","expect":"hit","types":["parallelism"],"text":"这件事既简单又复杂。"}
+{"id":"clean_short_plan","expect":"clean","types":[],"text":"行吧，那明天下午三点见。"}
+{"id":"clean_arrive_home","expect":"clean","types":[],"text":"我刚到家，先洗个澡。"}
+{"id":"clean_debug","expect":"clean","types":[],"text":"这报错我看了，是依赖版本冲突，升到 2.1 就行。"}
+{"id":"clean_comfort","expect":"clean","types":[],"text":"别急，我陪你捋一遍。"}
+{"id":"clean_admit","expect":"clean","types":[],"text":"你说得对，是我记错了。"}
+{"id":"clean_weekend","expect":"clean","types":[],"text":"周六下午吧，上午要补觉。"}
+{"id":"clean_work_reply","expect":"clean","types":[],"text":"这个需求我记下了，周五给你初版。"}
+{"id":"gap_keypoint","expect":"gap","types":[],"text":"这个问题的关键在于，我们需要从多个维度去理解它。","note":"正确废话，规则无标记"}
+{"id":"gap_time","expect":"gap","types":[],"text":"你已经做得很好了，剩下的交给时间。","note":"空泛安慰，规则无标记"}
+{"id":"gap_challenge","expect":"gap","types":[],"text":"让我们一起把挑战变成动力，把压力变成成长。","note":"鸡汤排比，规则无标记"}

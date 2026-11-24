@@ -6,11 +6,10 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 2 完成**。五段管线已打通；`DeepSeekClient` 与 4 个 v0 prompt
-> 已通过真实 smoke；磁盘缓存按信号指纹失效；成本按峰谷价换算并带预算闸门；rewrite `seed`
-> 已固定并进入缓存键。默认仍走 `--provider mock`（离线、零成本）。
-> 仓库里只有 4 条 `source=synthetic` 的 smoke 样例，**还没有评估集，也没有评估数字**。
-> 实测 `seed` 不保证复现（ADR-008）；多消息节奏是 Day 5 前置任务，当前 schema 未改。
+> 当前状态：**第 1 阶段 / Day 3 上半段**。五段管线、真实 client、缓存、成本、seed 均已完成。
+> 规则词典的 20 条 fixture 已跑通：规则可召回 10/10，语义召回 10/13（76.9%），clean 误报 0/7；
+> 剩下 3 条是规则无标记的“正确废话/空泛安慰/鸡汤排比”，正是 LLM 融合要补的部分。
+> 默认仍走 `--provider mock`；仓库只有 4 条 synthetic smoke 样例，**还没有评估集**。
 
 ---
 
@@ -69,6 +68,7 @@ python -m humanize run --sample e002_sarcasm_late --dry-run
 python -m humanize run --provider deepseek --sample e002_sarcasm_late
 python -m humanize run --no-cache     # 绕过磁盘缓存，强制重新调用
 python scripts/variance_check.py --sample e002_sarcasm_late --runs 3   # 3 次采样方差（花钱）
+python scripts/lexicon_report.py                                      # 规则召回/误报报告（零成本）
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -78,7 +78,7 @@ python scripts/variance_check.py --sample e002_sarcasm_late --runs 3   # 3 次�
 跑测试：
 
 ```powershell
-python -m pytest        # 73 passed
+python -m pytest        # 78 passed
 python -m ruff check src tests
 ```
 
@@ -126,9 +126,10 @@ src/humanize/
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 73 条测试
+tests/                          # 78 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
+docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
 ```
 
 ## 一次运行记录里有什么
@@ -190,7 +191,7 @@ docs/phase1_plan.md             # 第一阶段计划与进度
 |---|---|---|
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
-| 3 | AI 味诊断（规则 + LLM 融合） | 待做 |
+| 3 | AI 味诊断（规则 + LLM 融合） | 规则 fixture ✅（10/10、0 FP）；LLM 融合待做 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
