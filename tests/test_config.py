@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from humanize.config import ConfigError, load_config, load_personas
+from humanize.config import ConfigError, RhythmConfig, load_config, load_personas
 from humanize.io import stable_hash
 from humanize.lexicon import LexiconError, load_lexicon
 
@@ -27,8 +28,24 @@ def test_config_loads_with_expected_defaults(config) -> None:
 def test_config_hash_changes_when_prompt_version_bumps(config) -> None:
     # Day 2 acceptance: editing a prompt version must invalidate derived caches.
     bumped = config.model_copy(deep=True)
-    bumped.prompt_versions["rewrite"] = "rw.v2"
+    bumped.prompt_versions["rewrite"] = "rw.v4"
     assert stable_hash(config) != stable_hash(bumped)
+
+
+def test_rhythm_defaults(config) -> None:
+    assert config.rhythm.target_msg_chars_p50 == 12
+    assert config.rhythm.target_msg_chars_p95 == 35
+    assert config.rhythm.max_messages_per_reply == 4
+    assert {scene.value for scene in config.rhythm.split_allowed_scenes} == {
+        "casual",
+        "banter",
+        "comfort",
+    }
+
+
+def test_rhythm_p50_must_not_exceed_p95() -> None:
+    with pytest.raises(ValidationError):
+        RhythmConfig(target_msg_chars_p50=40, target_msg_chars_p95=35)
 
 
 def test_persona_book_resolves_default(personas) -> None:

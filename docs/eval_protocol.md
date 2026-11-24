@@ -129,6 +129,7 @@ Day 8 用 60 条正式确认，若稳定 ≥95% 可回退单次采样。多数�
 零人工成本附加指标：
 
 - 消息长度分布：P50/P95、超 35 字占比（Day 5 起按 `rhythm_profile` 分层）；
+  目标值来自 `rhythm.target_msg_chars_p50=12` / `p95=35`，报告要同时写实际分布与目标。
 - 事实点保留率：`kept_facts` 是否仍出现在输出中；
 - `unsafe_omission` 比例（Day 5 起）；
 - 延迟 P50/P95、单条成本、`cache_hits`、`degraded` 比例。

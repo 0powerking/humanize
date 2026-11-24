@@ -57,6 +57,7 @@ from .schemas import (
     ToneTarget,
     Usage,
     Versions,
+    recompute_counts,
 )
 from .voting import vote_ai_smell, vote_emotion, vote_sarcasm
 
@@ -339,6 +340,7 @@ class HumanizePipeline:
                 "max_rewrite_ratio": max_ratio,
                 "min_chars": self.cfg.thresholds.min_rewrite_chars,
             },
+            "rhythm": self.cfg.rhythm.model_dump(mode="json"),
             "lexicon": self.lexicon.to_payload(),
         }
 
@@ -355,38 +357,66 @@ class HumanizePipeline:
                 noop=True,
             )
 
-        output = self._audit_rewrite(inp, output, allow_noop, max_ratio)
+        output = self._audit_rewrite(
+            inp, output, allow_noop, max_ratio, signals.ai_smell.score
+        )
         return output, tuple(sorted(degraded)), outcome.result
 
-    @staticmethod
     def _audit_rewrite(
+        self,
         inp: RunInput,
         output: RewriteOutput,
         allow_noop: bool,
         max_ratio: float,
+        ai_smell_score: float,
     ) -> RewriteOutput:
-        """Recompute the ratio from the actual texts instead of trusting the model."""
-        actual = 1.0 - SequenceMatcher(None, inp.raw_reply, output.text).ratio()
+        """Recompute ratio and enforce rhythm/gate hard rules.
+
+        Prompt rules alone are probabilistic; these two are policy:
+        * scenes outside ``split_allowed_scenes`` are always one message;
+        * a gate-permitted, AI-smell-free, trivial edit is a no-op.
+        Both corrections are recorded in ``risk_flags``.
+        """
+        flags = list(output.risk_flags)
+        messages = list(output.messages)
+
+        if (
+            inp.context.scene not in self.cfg.rhythm.split_allowed_scenes
+            and len(messages) > 1
+        ):
+            messages = ["".join(messages)]
+            flags.append("merged_outside_split_scene")
+
+        text = "\n".join(messages)
+        actual = 1.0 - SequenceMatcher(None, inp.raw_reply, text).ratio()
         actual = round(max(0.0, min(1.0, actual)), 3)
 
-        flags = list(output.risk_flags)
+        if allow_noop and not output.noop and ai_smell_score == 0 and actual <= 0.2:
+            messages = [inp.raw_reply]
+            text = inp.raw_reply
+            actual = 0.0
+            flags.append("forced_noop_trivial_edit")
+            output = output.model_copy(update={"noop": True, "change_notes": ()})
+
         if abs(actual - output.rewrite_ratio) > 0.2:
             flags.append("ratio_self_report_mismatch")
         if not output.noop and actual > max_ratio + 0.05:
             flags.append("rewrite_ratio_over_limit")
         if output.noop and not allow_noop:
             flags.append("noop_without_gate_permission")
-        if not output.noop and output.text.strip() == inp.raw_reply.strip():
+        if not output.noop and text.strip() == inp.raw_reply.strip():
             flags.append("no_change_marked_as_rewrite")
 
         deduped = tuple(dict.fromkeys(flags))
+        message_count, max_msg_chars = recompute_counts(messages)
         return RewriteOutput.model_validate(
             {
                 **output.model_dump(),
+                "messages": messages,
                 "rewrite_ratio": actual,
                 "risk_flags": deduped,
-                "message_count": len(output.messages),
-                "max_msg_chars": max(len(message) for message in output.messages),
+                "message_count": message_count,
+                "max_msg_chars": max_msg_chars,
             }
         )
 
@@ -402,13 +432,19 @@ class HumanizePipeline:
         started = time.perf_counter()
         policy = self.cfg.govern
 
-        findings = self.lexicon.scan(rewrite.text)
+        # Scan each message separately: joining first would let a pattern see
+        # across the message boundary ("不是..." in msg1 + "而是..." in msg2).
+        findings = []
+        for message in rewrite.messages:
+            findings.extend(self.lexicon.scan(message))
         residue_hits: list[ResidueHit] = [
             ResidueHit(type=finding.type, span=finding.span, rule_id=finding.rule_id)
             for finding in findings
         ]
         forbidden = [
-            word for word in signals.persona_state.vocabulary.forbid if word in rewrite.text
+            word
+            for word in signals.persona_state.vocabulary.forbid
+            if any(word in message for message in rewrite.messages)
         ]
         for word in forbidden:
             residue_hits.append(

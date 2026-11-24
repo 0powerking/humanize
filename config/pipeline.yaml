@@ -31,12 +31,20 @@ models:
 signals:
   vote_runs: 1
 
+# 节奏：单条目标 12 字、硬上限 35 字；超过 35 字优先精简，不再继续拆。
+# 分条数由 max_messages_per_reply 管；persona 的 max_chars 只约束单条，不乘分条数。
+rhythm:
+  target_msg_chars_p50: 12
+  target_msg_chars_p95: 35
+  max_messages_per_reply: 4
+  split_allowed_scenes: [casual, banter, comfort]   # 正式场景 work/boundary 不拆
+
 # 每个模块独立版本号；prompt 改动必须同步 bump，否则缓存会错误命中。
 prompt_versions:
   signal.sarcasm: sig.sarcasm.v1
   signal.emotion: sig.emotion.v1
   signal.ai_smell: sig.ai_smell.v2
-  rewrite: rw.v1
+  rewrite: rw.v3
 
 thresholds:
   # ai_smell.score 低于此值时允许"几乎不改"（rewrite gate）。

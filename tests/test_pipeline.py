@@ -140,6 +140,39 @@ class LegacyTextClient:
         return replace(result, text=body)
 
 
+class MessagesClient:
+    """Arbitrary message list, for governance-boundary tests."""
+
+    name = "mock"
+
+    def __init__(self, inner: MockClient, messages: list[str]) -> None:
+        self.inner = inner
+        self.messages = messages
+
+    def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
+        result = self.inner.complete_json(
+            prompt_id=prompt_id,
+            payload=payload,
+            model=model,
+            temperature=temperature,
+            seed=seed,
+        )
+        if prompt_id != "rewrite":
+            return result
+        body = json.dumps(
+            {
+                "messages": self.messages,
+                "rewrite_ratio": 0.2,
+                "change_notes": [],
+                "kept_facts": [],
+                "risk_flags": [],
+                "noop": False,
+            },
+            ensure_ascii=False,
+        )
+        return replace(result, text=body)
+
+
 def _pipeline(client, config: PipelineConfig, personas: PersonaBook, lexicon: Lexicon):
     return HumanizePipeline(config=config, personas=personas, lexicon=lexicon, client=client)
 
@@ -177,6 +210,77 @@ def test_legacy_text_shape_is_wrapped(config, personas, lexicon, client, sample)
     assert record.rewrite.messages == ("旧格式回复",)
     assert record.rewrite.message_count == 1
     assert record.rewrite.text == "旧格式回复"
+
+
+def test_residue_does_not_cross_message_boundaries(
+    config, personas, lexicon, client, sample
+) -> None:
+    record = _pipeline(
+        MessagesClient(client, ["这不是钱的问题", "而是信任的问题"]),
+        config,
+        personas,
+        lexicon,
+    ).run(sample("e002_sarcasm_late"))
+
+    assert record.govern.residue.hits == ()
+
+
+def test_residue_scans_each_message_without_newline_spans(
+    config, personas, lexicon, client, sample
+) -> None:
+    record = _pipeline(
+        MessagesClient(client, ["首先，你要冷静。", "总之，别急。"]),
+        config,
+        personas,
+        lexicon,
+    ).run(sample("e002_sarcasm_late"))
+
+    types = {hit.type.value for hit in record.govern.residue.hits}
+    assert "enumeration" in types
+    assert "hedge" in types
+    assert all("\n" not in hit.span for hit in record.govern.residue.hits)
+
+
+def test_non_split_scene_is_merged_to_one_message(
+    config, personas, lexicon, client, sample
+) -> None:
+    base = sample("e002_sarcasm_late")
+    boundary = RunInput.model_validate(
+        {
+            **base.model_dump(),
+            "sample_id": "boundary_merge",
+            "context": {
+                "scene": "boundary",
+                "turns": [{"role": "user", "content": "你能帮我改论文吗"}],
+            },
+        }
+    )
+    record = _pipeline(
+        MessagesClient(client, ["这次时间太紧，帮不了。", "你找导师问问看？"]),
+        config,
+        personas,
+        lexicon,
+    ).run(boundary)
+
+    assert record.rewrite.messages == ("这次时间太紧，帮不了。你找导师问问看？",)
+    assert record.rewrite.message_count == 1
+    assert "merged_outside_split_scene" in record.rewrite.risk_flags
+
+
+def test_trivial_edit_on_gated_sample_is_forced_noop(
+    config, personas, lexicon, client, sample
+) -> None:
+    record = _pipeline(
+        MessagesClient(client, ["周六下午吧，上午得补觉"]),
+        config,
+        personas,
+        lexicon,
+    ).run(sample("e004_natural_noop"))
+
+    assert record.rewrite.noop is True
+    assert record.rewrite.messages == (record.input.raw_reply,)
+    assert record.rewrite.rewrite_ratio == 0.0
+    assert "forced_noop_trivial_edit" in record.rewrite.risk_flags
 
 
 def test_run_signals_returns_usage_without_rewrite(pipeline, sample) -> None:

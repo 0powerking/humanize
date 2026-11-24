@@ -22,7 +22,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | ✅ 探针两轮；方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1 ✅；rhythm / 省略待做 |
+| 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | Step 1/2 ✅（messages + rhythm + 6 条目测）；省略待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
 | 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
@@ -56,7 +56,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：131 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息
+- `tests/`：138 条测试 + 1 条 Step 4 提醒，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底
 
 ## Day 2 下半段进度
 
@@ -165,7 +165,29 @@ total            14        16     2     32
   `max_msg_chars=11`、`final_text` 与消息一致。
 - 未动 prompt / rhythm；Step 2 加 `rhythm` 配置与 prompt 节奏规则。
 
-## 已知约束
+## Day 5 Step 2：rhythm 配置 + prompt v3 + 6 条目测（已完成）
+
+- `config/pipeline.yaml` 新增 `rhythm`：`target_msg_chars_p50=12`、`p95=35`、
+  `max_messages_per_reply=4`、`split_allowed_scenes=[casual,banter,comfort]`。
+- `prompts/rewrite.md` v3：日常闲聊 2–3 条、正式场景必须单条、单条目标 12 字/上限 35 字、
+  超 35 优先精简不再拆；`allow_noop` 时默认保持原文。
+- 6 条目测（真实 deepseek-flash，`--no-cache`）：
+
+| 样本 | scene | 条数 | 字数 | 结果 |
+|---|---|---|---|---|
+| e001 | casual | 3 | 10/11/10 | 合理 |
+| e002 | banter | 2 | 14/10 | 合理，接住反讽 |
+| e003 | comfort | 3 | 11/10/14 | 合理，没拆碎 |
+| e004 | casual | 1 | 12 | 强制 noop |
+| probe_019 | boundary | 1 | 22 | 模型拆 2 条，被合并 |
+| probe_025 | work | 1 | 13 | noop |
+
+- prompt-only 没守住两条 hard rule，因此加管线兜底（ADR-011）：
+  - 非拆分场景多条 → 合并 + `merged_outside_split_scene`；
+  - gate 放行、`ai_smell=0`、实际 ratio ≤0.2 → 强制 noop + `forced_noop_trivial_edit`。
+- 代价：e001/e003 的 ratio 0.86/0.83 触发 `rewrite_ratio_over_limit`，内容可接受但压缩偏激进，
+  Step 4 回归时再看。
+- 测试：138 passed + 1 skipped（Step 4 兼容层删除提醒）。
 
 - git 已装（2.56.1），首次提交 `b226712`，作者 `sssyz27 <3064705887@qq.com>`；未配 remote。
 - `pip install -e .` 在构建隔离阶段可能卡住，用 `--no-build-isolation` 绕过。

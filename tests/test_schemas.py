@@ -69,6 +69,22 @@ def test_text_property_joins_messages() -> None:
     assert output.text == "第一句\n第二句"
 
 
+def test_text_property_survives_replay_without_text_field() -> None:
+    # Replaying a run record has no `text` key; the property must still work.
+    output = RewriteOutput.model_validate(
+        {"messages": ["加载", "后仍可读"], "rewrite_ratio": 0.1}
+    )
+
+    assert "text" not in output.model_dump()
+    assert output.text == "加载\n后仍可读"
+
+
+@pytest.mark.skip(reason="compat shim stays until Step 4; unskip when it is removed")
+def test_legacy_text_shape_is_rejected_after_shim_removal() -> None:
+    with pytest.raises(ValidationError):
+        RewriteOutput.model_validate({"text": "旧格式", "rewrite_ratio": 0.1})
+
+
 def test_signal_bundle_is_immutable(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
     with pytest.raises(ValidationError):

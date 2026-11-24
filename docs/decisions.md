@@ -321,22 +321,58 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 
 ---
 
-## Day 5 前置任务：节奏与语用省略（Step 1 已实施，其余未实施）
+## ADR-011 rhythm 配置与两条硬规则兜底（Day 5 Step 2）
+
+**背景**：Step 2 给 prompt v2/v3 加了节奏规则（12 字目标、35 字上限、日常 2–3 条、正式场景单条）。
+6 条目测发现 **prompt-only 守不住 hard rule**：
+
+- `probe_019`（boundary）仍被拆成 2 条，违反“正式场景不拆”；
+- `e004`（gate 放行、AI 味为 0）仍被微调“要→得”，不是 noop。
+
+**决策**：
+1. `rhythm` 配置：`target_msg_chars_p50=12`、`p95=35`、`max_messages_per_reply=4`、
+   `split_allowed_scenes=[casual,banter,comfort]`。prompt 里写同一组数字；改配置必须同步
+   bump prompt 版本，否则模型与评估口径不一致。
+2. **正式场景硬兜底**：`scene` 不在 `split_allowed_scenes` 且模型输出多条时，管线用 `""` 合并为
+   一条，记 `merged_outside_split_scene` 到 `risk_flags`。
+3. **trivial edit 硬兜底**：`allow_noop=true`、`ai_smell.score == 0`、实际 ratio ≤ 0.2 时，
+   管线强制 noop（消息=原文、ratio=0、change_notes 清空），记 `forced_noop_trivial_edit`。
+   这是“不要为了改而改”的最低保证；0.2 是经验阈值，先记录，Day 8 评估可调。
+4. persona `max_chars` 只约束单条，不乘分条数；分条数由 `max_messages_per_reply` 管（ADR-010）。
+
+**为什么不用 prompt 反复调**：两条规则都是策略，不是措辞问题；模型偶尔遵守、偶尔不遵守，
+评估时会变成随机项。管线兜底是确定性的，且用 risk_flags 保留“模型原本想做什么”。
+
+**6 条目测（2026-11-24，prompt rw.v3，真实 deepseek-flash）**：
+
+| 样本 | scene | 条数 | 各条字数 | 结果 |
+|---|---|---|---|---|
+| e001 | casual | 3 | 10/11/10 | 合理，短句承接 |
+| e002 | banter | 2 | 14/10 | 合理，接住反讽 |
+| e003 | comfort | 3 | 11/10/14 | 合理，没有拆碎 |
+| e004 | casual | 1 | 12 | 强制 noop，正确 |
+| probe_019 | boundary | 1 | 22 | 模型拆了 2 条，被合并回 1 条 |
+| probe_025 | work | 1 | 13 | noop，正确 |
+
+e001/e003 的 `rewrite_ratio` 分别 0.86/0.83，触发 `rewrite_ratio_over_limit`；内容没问题，
+但说明模型压缩偏激进，Step 4 回归时看是否要放宽或调整 prompt。
+
+---
 
 **观察**：真人即时聊天的"人味"很大一部分来自节奏——短句、一条拆成多条发、单条很少
 超过 20 字。当前 `RewriteOutput` 只有单个 `text`，等于假设"一条输入对应一条输出"，
 结果仍然是"消息块"而不是"聊天"。
 
-**状态：Step 1 已实施（`messages` + 重算 + 治理层合并）；prompt / rhythm 配置 / 省略检查未实施。**
+**状态：Step 1 / Step 2 已实施（messages + rhythm + 硬兜底）；语用省略未实施。**
 
 1. ✅ `RewriteOutput` 改为 `messages`（1–4 条）；`message_count`、`max_msg_chars` 重算；
    治理层用 `\n` 合并并写审计（ADR-010）。
-2. `config` 增加 `rhythm` 段：`target_msg_chars_p50`、`p95`、`max_messages_per_reply`、
-   `split_allowed_scenes`（`work`/`boundary` 等正式场景不拆）。
+2. ✅ `config` 增加 `rhythm` 段：`target_msg_chars_p50=12`、`p95=35`、
+   `max_messages_per_reply=4`、`split_allowed_scenes=[casual,banter,comfort]`。
    **与 persona 的边界**：`target_msg_chars_p50` 优先；persona `max_chars` 只约束单条，
-   不乘到分条数上。
-3. `prompts/rewrite.md` 增加节奏规则：日常闲聊优先拆 2–3 条短消息，每条独立可读、
-   承接上一条；**不要为拆而拆**，正式场景保持单条。
+   不乘到分条数上。正式场景多条由管线强制合并（ADR-011）。
+3. ✅ `prompts/rewrite.md` v3 增加节奏规则：日常闲聊优先拆 2–3 条短消息、每条独立可读、
+   承接上一条；正式场景必须单条；单条目标 12 字、上限 35 字，超 35 优先精简不再拆。
 
 **评估侧同步加**：
 - 「消息长度分布」：P50/P95、超 35 字占比（零人工成本，自动算）；

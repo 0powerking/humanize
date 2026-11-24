@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from .schemas import PersonaState, PersonaTraits, StrictModel, Vocabulary
+from .schemas import PersonaState, PersonaTraits, Scene, StrictModel, Vocabulary
 
 
 class ConfigError(RuntimeError):
@@ -81,6 +81,23 @@ class PathsConfig(StrictModel):
     runs_dir: str = "data/runs"
 
 
+class RhythmConfig(StrictModel):
+    target_msg_chars_p50: int = Field(default=12, ge=1, le=100)
+    target_msg_chars_p95: int = Field(default=35, ge=1, le=200)
+    max_messages_per_reply: int = Field(default=4, ge=1, le=4)
+    split_allowed_scenes: tuple[Scene, ...] = (
+        Scene.casual,
+        Scene.banter,
+        Scene.comfort,
+    )
+
+    @model_validator(mode="after")
+    def _p50_not_above_p95(self) -> RhythmConfig:
+        if self.target_msg_chars_p50 > self.target_msg_chars_p95:
+            raise ValueError("target_msg_chars_p50 must be <= target_msg_chars_p95")
+        return self
+
+
 class SignalConfig(StrictModel):
     # 1 = single sample at runtime (default); 3 = majority vote for evaluation.
     vote_runs: Literal[1, 3] = 1
@@ -99,6 +116,7 @@ class PipelineConfig(StrictModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     cost: CostConfig = Field(default_factory=CostConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
+    rhythm: RhythmConfig = Field(default_factory=RhythmConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
 
 

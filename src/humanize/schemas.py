@@ -12,12 +12,24 @@ Adding an optional field is backward compatible and does not require a bump.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "1.1"
+
+
+def recompute_counts(messages: Sequence[str]) -> tuple[int, int]:
+    """Single source of truth for message_count / max_msg_chars.
+
+    Used by both the schema validator and the pipeline. Keeping two copies would
+    drift exactly like the rewrite-ratio logic would if it were duplicated.
+    """
+    if not messages:
+        return 0, 0
+    return len(messages), max(len(message) for message in messages)
 
 
 class StrictModel(BaseModel):
@@ -277,8 +289,7 @@ class RewriteOutput(StrictModel):
 
     @model_validator(mode="after")
     def _recompute_counts(self) -> RewriteOutput:
-        self.message_count = len(self.messages)
-        self.max_msg_chars = max(len(message) for message in self.messages)
+        self.message_count, self.max_msg_chars = recompute_counts(self.messages)
         if self.noop:
             if self.rewrite_ratio > 1e-9:
                 raise ValueError("noop rewrite must have rewrite_ratio == 0")
