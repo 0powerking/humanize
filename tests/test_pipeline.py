@@ -108,38 +108,6 @@ class MultiMessageClient:
         return replace(result, text=body)
 
 
-class LegacyTextClient:
-    """Returns the v1 prompt shape until prompt v2 lands."""
-
-    name = "mock"
-
-    def __init__(self, inner: MockClient) -> None:
-        self.inner = inner
-
-    def complete_json(self, *, prompt_id, payload, model, temperature, seed=None) -> LLMResult:
-        result = self.inner.complete_json(
-            prompt_id=prompt_id,
-            payload=payload,
-            model=model,
-            temperature=temperature,
-            seed=seed,
-        )
-        if prompt_id != "rewrite":
-            return result
-        body = json.dumps(
-            {
-                "text": "旧格式回复",
-                "rewrite_ratio": 0.1,
-                "change_notes": [],
-                "kept_facts": [],
-                "risk_flags": [],
-                "noop": False,
-            },
-            ensure_ascii=False,
-        )
-        return replace(result, text=body)
-
-
 class MessagesClient:
     """Arbitrary message list, for governance-boundary tests."""
 
@@ -208,16 +176,6 @@ def test_multi_message_governance_merges(config, personas, lexicon, client, samp
     assert record.rewrite.max_msg_chars == 9
     assert record.govern.final_text == "第一句\n第二句，稍微长一点"
     assert any("merged into final_text" in d for d in record.govern.audit.decisions)
-
-
-def test_legacy_text_shape_is_wrapped(config, personas, lexicon, client, sample) -> None:
-    record = _pipeline(LegacyTextClient(client), config, personas, lexicon).run(
-        sample("e002_sarcasm_late")
-    )
-
-    assert record.rewrite.messages == ("旧格式回复",)
-    assert record.rewrite.message_count == 1
-    assert record.rewrite.text == "旧格式回复"
 
 
 def test_residue_does_not_cross_message_boundaries(

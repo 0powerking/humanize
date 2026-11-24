@@ -523,9 +523,16 @@ class HumanizePipeline:
         )
 
         categories: list[str] = []
-        if _contains(rewrite.text, _PHONE) or _contains(rewrite.text, _URL):
+        if any(
+            _contains(message, _PHONE) or _contains(message, _URL)
+            for message in rewrite.messages
+        ):
             categories.append("contact_info")
-        if any(word in rewrite.text for word in policy.sensitive_stub):
+        if any(
+            word in message
+            for message in rewrite.messages
+            for word in policy.sensitive_stub
+        ):
             categories.append("keyword")
         blocked = bool(categories) and policy.block_on_hit
         sensitive = SensitiveResult(
@@ -545,7 +552,7 @@ class HumanizePipeline:
             )
             omission = check_omissions(
                 raw_reply=inp.raw_reply,
-                final_text=rewrite.text,
+                final_text="\n".join(rewrite.messages),
                 kept_facts=rewrite.kept_facts,
                 context_texts=context_texts,
                 lexicon=self.lexicon,

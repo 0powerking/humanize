@@ -45,6 +45,18 @@ def _preserved(phrase: str, text: str) -> bool:
     return phrase in text or _coverage(phrase, text) >= _COVERAGE
 
 
+def fact_preserved(fact: str, text: str, threshold: float = 0.7) -> bool:
+    """Retention metric helper: exact substring or high character coverage.
+
+    Exact substring is too strict for word order/insertions ("换个工作" ->
+    "换工作", "上午补觉" -> "上午要补觉"). Coverage catches those; synonyms still
+    need an LLM/human judge, so both numbers are reported.
+    """
+    if fact in text:
+        return True
+    return _coverage(fact, text) >= threshold
+
+
 def _is_concrete(text: str) -> bool:
     return bool(_CONCRETE_RE.search(text))
 
@@ -56,6 +68,11 @@ def has_concrete_anchor(text: str) -> bool:
 
 def _concrete_spans(text: str) -> list[str]:
     return list(dict.fromkeys(match.group(0) for match in _CONCRETE_RE.finditer(text)))
+
+
+def concrete_spans(text: str) -> list[str]:
+    """Public accessor used by the Step 4 regression statistics."""
+    return _concrete_spans(text)
 
 
 def check_omissions(

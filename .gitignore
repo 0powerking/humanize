@@ -33,3 +33,6 @@ data/fusion/
 
 # stability probe reports
 data/probe/reports/
+
+# Day 5 regression reports
+data/regression/

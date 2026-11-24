@@ -30,14 +30,6 @@ def test_noop_requires_zero_ratio() -> None:
         RewriteOutput(messages=("x",), rewrite_ratio=0.3, noop=True)
 
 
-def test_legacy_text_is_wrapped_into_messages() -> None:
-    output = RewriteOutput.model_validate({"text": "旧格式回复", "rewrite_ratio": 0.2})
-
-    assert output.messages == ("旧格式回复",)
-    assert output.message_count == 1
-    assert output.max_msg_chars == len("旧格式回复")
-
-
 def test_message_counts_are_recomputed_not_trusted() -> None:
     output = RewriteOutput(
         messages=("短", "稍微长一点"),
@@ -80,8 +72,9 @@ def test_text_property_survives_replay_without_text_field() -> None:
     assert output.semantic_points == ()
 
 
-@pytest.mark.skip(reason="compat shim stays until Step 4; unskip when it is removed")
-def test_legacy_text_shape_is_rejected_after_shim_removal() -> None:
+def test_legacy_text_shape_is_rejected() -> None:
+    # The compatibility shim is gone; an old-shaped model response must fail
+    # loudly instead of being silently accepted.
     with pytest.raises(ValidationError):
         RewriteOutput.model_validate({"text": "旧格式", "rewrite_ratio": 0.1})
 

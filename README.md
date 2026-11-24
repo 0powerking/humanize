@@ -6,11 +6,12 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 5 Step 4-1 完成**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
+> 当前状态：**第 1 阶段 / Day 5 完成**。管线、真实 client、缓存、成本、seed、ai_smell 融合、
 > 稳定性探针均已完成（方案 A + `vote_runs`）。`RewriteOutput` 为 `messages`（1–4 条），
-> 节奏 12/35 字、正式场景不拆；prompt v6 区分 `kept_facts`（具体锚点）与 `semantic_points`
-> （抽象概括），管线自动降级并记 `kept_facts_demoted`，schema 1.2。下一步：删兼容层（Step 4-2），
-> 然后 32 条探针 + 4 条 seed 回归。默认仍走 `--provider mock`；还没有评估集。
+> 节奏 12/35 字、正式场景不拆；`kept_facts` 只收具体锚点，抽象项进 `semantic_points`；
+> 兼容层已删除（旧 `text` 形状报错），schema 1.2。Day 5 回归 36/36 跑通、cache_hits=0，
+> `kept_facts` 精确保留 72.2% / 覆盖率 91.7%，boundary/work 无具体实体丢失。
+> 下一步：Day 7–8 评估集与 ratio 判定。默认仍走 `--provider mock`；还没有评估集。
 
 ---
 
@@ -73,6 +74,7 @@ python scripts/variance_check.py --sample e002_sarcasm_late --runs 3   # 3 次�
 python scripts/lexicon_report.py                                      # 规则召回/误报报告（零成本）
 python scripts/ai_smell_fusion_check.py                               # 融合验收：gap/clean/规则丢失（花钱）
 python scripts/probe_report.py                                        # 稳定性探针分布校验（零成本）
+python scripts/day5_regression.py                                     # Day 5 回归：链路/保留率/boundary
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -82,7 +84,7 @@ python scripts/probe_report.py                                        # 稳定�
 跑测试：
 
 ```powershell
-python -m pytest        # 150 passed, 1 skipped
+python -m pytest        # 149 passed
 python -m ruff check src tests
 ```
 
@@ -131,7 +133,7 @@ src/humanize/
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 150 条测试 + 1 条 Step 4-2 提醒（skip）
+tests/                          # 149 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
@@ -200,7 +202,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | ✅ 规则 10/10、融合 gap 3/3、clean 0 FP |
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | ✅ 探针两轮 + 方案 A + `vote_runs` 已实现 |
-| 5 | 人设状态 + 重写层 v1 + gate | Step 1–3 ✅；Step 4-1 ✅（kept_facts 锚点）；删兼容层/回归待做 |
+| 5 | 人设状态 + 重写层 v1 + gate | ✅ Step 1–4（messages / rhythm / 省略 / kept_facts / 回归） |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
 | 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 待做 |

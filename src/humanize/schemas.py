@@ -279,19 +279,6 @@ class RewriteOutput(StrictModel):
     risk_flags: tuple[str, ...] = ()
     noop: bool = False
 
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_text(cls, data: Any) -> Any:
-        # The v1 prompt still returns {"text": ...}; step 2 switches it to
-        # {"messages": [...]}. Until then, wrap the legacy shape here.
-        if not isinstance(data, dict):
-            return data
-        data = dict(data)
-        legacy = data.pop("text", None)
-        if "messages" not in data and isinstance(legacy, str) and legacy:
-            data["messages"] = [legacy]
-        return data
-
     @model_validator(mode="after")
     def _recompute_counts(self) -> RewriteOutput:
         self.message_count, self.max_msg_chars = recompute_counts(self.messages)
@@ -391,7 +378,10 @@ class RunRecord(StrictModel):
             raise ValueError("run_id does not match input.run_id")
         if self.input.sample_id != self.sample_id:
             raise ValueError("sample_id does not match input.sample_id")
-        if self.govern.final_text != self.rewrite.text and not self.govern.sensitive.blocked:
+        if (
+            self.govern.final_text != "\n".join(self.rewrite.messages)
+            and not self.govern.sensitive.blocked
+        ):
             raise ValueError(
                 "final_text must equal newline-joined rewrite.messages unless blocked"
             )

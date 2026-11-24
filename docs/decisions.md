@@ -308,7 +308,8 @@ peak/off-peak 判定和模型名映射，再查 provider 是否改了价。
 - `message_count` / `max_msg_chars` **由 schema validator 和管线双重重算**，输入字段不做
   `ge/le` 约束：模型自报 9 条也不能让它校验失败，而是直接覆盖。
 - 兼容期：`{"text": "..."}` 旧形状在 `model_validator(mode="before")` 里自动包成
-  `messages=[text]`；Step 2 把 prompt 改成输出 `messages` 后，这个兼容层保留一个版本再删。
+  `messages=[text]`；**Step 4-2 已删除该兼容层**，旧形状现在直接 `ValidationError`
+  （`test_legacy_text_shape_is_rejected`），不再静默通过。
 - 治理层（Step 1）把多条用 `\n` 合并成 `final_text`，审计记
   `messages: N message(s) merged into final_text ...`；评估层下一步直接消费 `messages`。
 - `SCHEMA_VERSION` 从 `1.0` 升到 `1.1`（删除 `text` 字段是破坏性变更）。
@@ -452,6 +453,47 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 4. **统一判定**：ratio + kept_facts 保留率 + boundary 省略统计三者一起看；不凭单指标调 prompt。
 
 顺序不能反：兼容层删除和 kept_facts 修正混在一起，回归出问题无法归因。
+
+---
+
+## Day 5 回归结果（Step 4-2 / 4-3）
+
+**链路（32 探针 + 4 seed，`--no-cache`，真实 deepseek-flash）**：
+
+- 36/36 跑通，**0 异常、0 degraded、cache_hits=0**；成本 0.0824 元。
+- 兼容层已删：旧 `{"text"}` 形状现在报 `ValidationError`。
+
+**kept_facts 保留率**（只算具体锚点事实）：
+
+| 口径 | 结果 |
+|---|---|
+| 精确子串 | 26/36 = **72.2%** |
+| 字符覆盖率 0.7 | 33/36 = **91.7%** |
+
+- 精确口径偏严：“换个工作→换工作”“上午补觉→上午要补觉”都算丢失，但语义仍在。
+- 覆盖率口径仍有 3 条 miss：`改天再约→改天呗`（承诺被弱化，值得关注）、
+  `尽快处理→尽快弄`、`没有时间→没空`（后两条是同义替换）。
+- 结论：保留率**可算**，但单靠字符串无法判断同义替换；Day 8 需要 LLM/人工判一次
+  “语义保留”，不要用精确值直接当质量结论。
+
+**boundary / work 省略统计**（这两个场景不跑 omission 规则）：
+
+- 12 条正式场景全部 `message_count=1`，concrete dropped = **0**；
+- compression 范围：boundary −0.3～0.2，work −0.69～0.12；负值代表输出比原文更长（扩写），
+  不是省略；
+- `probe_030`（work）compression −0.69，模型把一句话扩成两句，属于“正式场景话变多”，
+  不是省略问题，Day 8 可单独看。
+
+**unsafe_omission 真实触发**：
+
+- 36 条里 **0 次**触发；全量 concrete span 观测 10 个、丢失 0 个。
+- 这是“模型很少丢具体实体”的分支，不是规则太松：规则有 10 次可判定机会，没有一次
+  命中“被删且不在上下文”。检出能力由单元测试保证；Day 8 评估集里若出现真实丢失，
+  应能触发。
+- 2 条 `partial_omission`（e004、probe_001 的“周六下午→周六”类部分保留），只记录不阻断。
+
+**ratio 未调**：本轮按要求不看 ratio 调优，e001/e003 仍会触发
+`rewrite_ratio_over_limit`；Day 8 用“ratio + kept_facts 保留率 + 删除内容类型”一起判断。
 
 ---
 
