@@ -153,6 +153,15 @@ class HumanizePipeline:
 
     # -- stage 1: signals -------------------------------------------------- #
 
+    def run_signals(self, inp: RunInput) -> tuple[SignalBundle, Usage]:
+        """Signal layer only, with usage. Used by the stability probe.
+
+        No cache is involved unless the caller injected a CachedClient; the probe
+        asserts ``usage.cache_hits == 0`` so three samples are three real calls.
+        """
+        signals, _, results = self._signals(inp)
+        return signals, self._usage(results, None)
+
     def _signals(self, inp: RunInput) -> tuple[SignalBundle, int, list[LLMResult]]:
         started = time.perf_counter()
         try:

@@ -6,10 +6,10 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 4 探针就绪**。管线、真实 client、缓存、成本、seed、ai_smell 融合
-> 均已完成（规则 10/10、融合 gap 3/3、clean 0 FP）。稳定性探针 32 条 = 30 条 base
-> （5 场景各 6 条，反讽/非反讽 14/16）+ 2 条补充（生气/期待，不计入 95% 判断）；
-> comfort 的 2 条反讽按 weak/strong 单列。`scripts/probe_report.py` 校验通过，**尚未跑 3 次信号采样**。
+> 当前状态：**第 1 阶段 / Day 4 探针已跑**。管线、真实 client、缓存、成本、seed、ai_smell 融合
+> 均已完成（规则 10/10、融合 gap 3/3、clean 0 FP）。稳定性探针 32 条 × 3 次，`cache_hits=0`、
+> 288 次真实调用、0.1552 元；base 30 的 `emotion.label` 3/3 一致率 93.3%，机械判定
+> **方案 A + 信号层多数投票**（2/3 多数四个字段均 30/30）；30 条 CI 很宽，Day 8 用 60 条复核。
 > 默认仍走 `--provider mock`；仓库只有 4 条 synthetic smoke 样例，**还没有评估集**。
 
 ---
@@ -81,7 +81,7 @@ python scripts/probe_report.py                                        # 稳定�
 跑测试：
 
 ```powershell
-python -m pytest        # 90 passed
+python -m pytest        # 91 passed
 python -m ruff check src tests
 ```
 
@@ -130,10 +130,11 @@ src/humanize/
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 90 条测试
+tests/                          # 91 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字段）
+docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 ```
 
 ## 一次运行记录里有什么
@@ -196,7 +197,7 @@ docs/eval_protocol.md           # 评估协议 v1（指标、采样、报告字�
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
 | 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断（规则 + LLM 融合） | ✅ 规则 10/10、融合 gap 3/3、clean 0 FP |
-| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 探针数据 ✅（32 条）；3 次信号采样待跑 |
+| 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 探针已跑 ✅（cache_hits=0，288 calls，0.1552 元）；方案 A + 多数投票待实现 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |
 | 6 | 治理层最小版（残留 + 审计） | 待做 |
 | 7–9 | 评估集 60 条 / 批量指标 / 盲评 | 待做 |

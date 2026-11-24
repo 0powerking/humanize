@@ -21,7 +21,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 1 | 仓库骨架、契约、config、JSONL IO、CLI、Mock 端到端、缓存键 | `pytest` 绿；产出完整 run record | ✅ |
 | 2 | DeepSeek 客户端、重试/超时、磁盘缓存、成本记账 | 第二次运行缓存命中，成本 0；改 prompt 版本后不命中 | ✅ 全部完成（含 seed 与方差实测） |
 | 3 | AI 味诊断 v1（规则 + LLM 融合） | 20 条正负 fixture 通过 | ✅ 规则 + 融合；gap 3/3、clean 0 FP、规则 0 丢失 |
-| 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 探针数据 ✅；稳定性跑批待做 |
+| 4 | 反讽 + 情绪 + 并行聚合 + 单模块失败降级 | 注入失败仍出结果，`degraded` 有记录 | 探针已跑 ✅；方案 A + 多数投票待实现 |
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | 待做 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | 待做 |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | 协议已定稿（`docs/eval_protocol.md`），数据集待做 |
@@ -125,6 +125,29 @@ total            14        16     2     32
   探针跑批时单独算这两条的 3/3 一致率，不并入其它场景。
 - 待跑：32 × 3 次信号采样；`sarcasm.label`、`emotion.label`、`tone`、`ai_smell` 类型集合
   逐字段一致率；base ≥95% 临时切方案 B，<95% 走方案 A 分桶（ADR-008）。
+
+## Day 4 探针结果（已跑）
+
+- 32 条 × 3 次 = 96 次信号运行 / 288 次 provider 调用；**`cache_hits=0`**（硬断言），
+  成本 0.1552 元，实回 `deepseek-flash`。
+- base 30 的 3/3 一致率：
+
+| 字段 | 3/3 | ≥2/3 |
+|---|---|---|
+| sarcasm.label | 29/30（96.7%） | 30/30 |
+| emotion.label | **28/30（93.3%）** | 30/30 |
+| tone | 29/30（96.7%） | 30/30 |
+| ai_smell.types | 29/30（96.7%） | 30/30 |
+
+- 5 条字段级失败：probe_010（literal→uncertain）、probe_003（期待/平静）、
+  probe_028（不满/平静）、probe_004（soothe/matter_of_fact）、probe_014（类型漂移）。
+  没有 3 个值全不同的情况。
+- comfort 子组（008 weak / 011 strong）四项均 2/2；`probe_031` 稳定判为
+  `sarcastic/不满/soothe`（与设计的“生气”是标签边界差异，不是抖动）；`probe_032`
+  稳定判为 `literal/期待/banter`。
+- 判定：`emotion.label` 低于 95% → **方案 A + 信号层多数投票**；30 条 CI 很宽
+  （28/30 的 Wilson 95% 为 78.7–98.2%），Day 8 用 60 条复核。
+- 详细报告：`docs/stability_probe.md`。
 
 ## 已知约束
 

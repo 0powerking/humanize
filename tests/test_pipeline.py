@@ -91,6 +91,14 @@ def test_route_seeds_are_forwarded(config, personas, lexicon, client, sample) ->
     assert record.meta["model_seeds"] == {"signal": 7, "rewrite": 42}
 
 
+def test_run_signals_returns_usage_without_rewrite(pipeline, sample) -> None:
+    signals, usage = pipeline.run_signals(sample("e001_overwork_advice"))
+
+    assert signals.persona_state.persona_id == "p_sunyou"
+    assert usage.calls == 3  # sarcasm + emotion + ai_smell, no rewrite
+    assert usage.cache_hits == 0
+
+
 def test_rewrite_removes_enumeration(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
 

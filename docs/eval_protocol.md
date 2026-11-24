@@ -97,10 +97,14 @@ Day 5 起新增 `rhythm_profile: short_burst | single_msg | long_explain`，用�
 
 | 对象 | 采样方式 | 报告方式 |
 |---|---|---|
-| 标签类（sarcasm.label / emotion.label / tone） | 单次运行 | 比例 + 混淆矩阵 |
+| 标签类（sarcasm.label / emotion.label / tone） | 单次；Day 4 探针后默认 **3 次多数投票**（Day 8 复核 ≥95% 可回退单次） | 比例 + 混淆矩阵 + 投票一致率 |
 | 连续值（valence / arousal / confidence） | 3 次运行取**中位数** | 中位数 + 极差 |
 | 重写文本质量 | 3 次采样，每次独立评分 | 均值 ± 标准差，不报单次 |
 | A/B 偏好 | 预注册 1 次采样；预算允许时 3 次取多数 | 胜率 + Wilson CI，注明采样次数 |
+
+Day 4 探针（`docs/stability_probe.md`）：base 30 的 `emotion.label` 3/3 一致率 28/30（93.3%，
+Wilson 78.7–98.2%），低于 95% 临时线，因此标签指标默认切 3 次多数投票；这是临时决定，
+Day 8 用 60 条正式确认。多数投票使评估调用数约 ×2（ADR-008）。
 
 硬性要求：
 
