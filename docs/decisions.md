@@ -543,7 +543,27 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 
 ---
 
-## Step 4 前置口径：ratio 和 kept_facts 一起看
+## ADR-016 Day 7–8：真实样本前置 + Day 8 拆两段
+
+**背景**：Day 8 正式集要求 60 条里至少 30%（18 条）真实脱敏样本；如果当天才找，一定凑不齐。
+60 条标注 × 8 分钟 ≈ 8 小时，再加建集/跑评估/写报告，压成一天必然标注疲劳、报告仓促。
+
+**决策**：
+1. 真实候选从 Day 7 就开始存：`data/eval/real_candidates.jsonl`，每天 20 分钟、3–5 条；
+   手动脱敏，`source=real`、`anonymized=true`、`notes` 写清改了什么；
+   `scripts/real_candidates_check.py` 做结构 + 明显 PII 检查（不保证脱敏）。
+2. Day 8 拆两段：
+   - **8a**：建 60 条（≥18 real）+ 标注执行；记录有效 N、跳过旧 schema M。
+   - **8b**：批量跑 + 自动指标 + `report.md`；不把标注和报告压在同一天。
+3. 计时只取 **core 段**（第 1 条 warmup、最后 1–2 条 fatigue 不计），报中位数/范围/样本数。
+4. 歧义**当场**记在 `docs/annotation_guide_v1.md` 末尾；标完整理成清单，作为 Day 8 报告
+   “已知限制”和面试“怎么保证标注一致性”的素材。
+5. B 标注者找不到就留空 `annotator_B`，Day 8 写“单标注者，无 κ”；不凑数、不虚报 κ。
+
+**Day 8 待办**：18 条真实候选、60 条标注、双口径保留率、commitment runs/items、work 扩写、
+人工语义保留 3 条、ratio 调优。
+
+---
 
 - `rewrite_ratio` 高**不等于**信息丢失。删掉“首先/其次/从另一个角度”这类 AI 味套话，
   ratio 0.86 是有效压缩；只有删掉 `kept_facts` 实体或关键限定（“周六下午→周六”、

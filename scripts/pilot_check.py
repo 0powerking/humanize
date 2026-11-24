@@ -21,8 +21,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 PILOT = ROOT / "data/eval/pilot_10.jsonl"
 TEMPLATE = ROOT / "data/eval/annotations/pilot_annotations_template.csv"
+TEMPLATE_B = ROOT / "data/eval/annotations/pilot_annotations_template_B.csv"
+TIMING = ROOT / "data/eval/annotations/pilot_timing_template.csv"
 SCENES = {"casual", "comfort", "banter", "boundary", "work"}
 PROFILES = {"short_burst", "single_msg", "long_explain"}
+SEGMENTS = {"warmup", "core", "fatigue"}
 FIELDS = {
     "sample_id",
     "annotator_id",
@@ -37,12 +40,15 @@ FIELDS = {
     "ab_preference",
     "notes",
 }
+FIELDS_B = (FIELDS - {"annotator_id"}) | {"annotator_B"}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pilot", default=str(PILOT))
     parser.add_argument("--template", default=str(TEMPLATE))
+    parser.add_argument("--template-b", default=str(TEMPLATE_B))
+    parser.add_argument("--timing", default=str(TIMING))
     args = parser.parse_args()
 
     cases = []
@@ -95,11 +101,33 @@ def main() -> int:
     if overlap != 5:
         problems.append(f"expected 5 overlap rows, got {overlap}")
 
+    with Path(args.template_b).open(encoding="utf-8", newline="") as handle:
+        reader_b = csv.DictReader(handle)
+        header_b = set(reader_b.fieldnames or [])
+        rows_b = list(reader_b)
+    if header_b != FIELDS_B:
+        problems.append(
+            f"B template header mismatch: missing={FIELDS_B - header_b}, "
+            f"extra={header_b - FIELDS_B}"
+        )
+    if [row["sample_id"] for row in rows_b] != ids[:5]:
+        problems.append("B template must cover the first 5 overlap ids")
+    if any(row["is_overlap"] != "1" for row in rows_b):
+        problems.append("B template rows must all be is_overlap=1")
+
+    with Path(args.timing).open(encoding="utf-8", newline="") as handle:
+        timing_rows = list(csv.DictReader(handle))
+    if [row["sample_id"] for row in timing_rows] != ids:
+        problems.append("timing template ids do not match pilot ids")
+    if any(row["segment"] not in SEGMENTS for row in timing_rows):
+        problems.append("timing template has invalid segment")
+
     print(f"pilot={Path(args.pilot).relative_to(ROOT)} cases={len(cases)}")
     print(f"scenes: {dict(scene_counts)}")
     print(f"sarcasm: {dict(sarcasm)}")
     print(f"profiles: {dict(Counter(case['rhythm_profile'] for case in cases))}")
-    print(f"template rows={len(rows)} overlap={overlap}")
+    print(f"template rows={len(rows)} overlap={overlap} B_rows={len(rows_b)}")
+    print(f"timing rows={len(timing_rows)}")
     if problems:
         print("FAILED:")
         for problem in problems:

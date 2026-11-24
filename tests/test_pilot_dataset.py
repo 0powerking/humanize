@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PILOT = ROOT / "data/eval/pilot_10.jsonl"
 TEMPLATE = ROOT / "data/eval/annotations/pilot_annotations_template.csv"
+TEMPLATE_B = ROOT / "data/eval/annotations/pilot_annotations_template_B.csv"
+TIMING = ROOT / "data/eval/annotations/pilot_timing_template.csv"
 
 
 def _cases() -> list[dict]:
@@ -63,3 +65,26 @@ def test_annotation_template_covers_pilot_with_five_overlaps() -> None:
         "ab_preference",
     }
     assert required <= set(rows[0])
+
+
+def test_b_template_has_five_overlap_rows_and_blank_annotator_b() -> None:
+    with TEMPLATE_B.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 5
+    assert all(row["is_overlap"] == "1" for row in rows)
+    assert all(row["annotator_B"] == "" for row in rows)
+    assert [row["sample_id"] for row in rows] == [
+        case["id"] for case in _cases()[:5]
+    ]
+
+
+def test_timing_template_segments() -> None:
+    with TIMING.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert [row["sample_id"] for row in rows] == [case["id"] for case in _cases()]
+    segments = [row["segment"] for row in rows]
+    assert segments[0] == "warmup"
+    assert segments[-1] == "fatigue"
+    assert segments.count("core") == 8

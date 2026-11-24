@@ -25,7 +25,8 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 | 5 | 人设状态 + 重写层 v1 + gate + `change_notes` | 10 条人工目测，说明与信号对得上 | ✅ Step 1–4 全部完成 |
 | 6 | 治理层：残留规则 + 审计 + 敏感词桩 | 构造"改坏了"的样本能被检出 | ✅ 敏感桩 + 评估聚合（压缩完成） |
 | 7 | 评估集 pilot 10 条 + 标注规范 | `eval_protocol.md` 定稿 | ✅ pilot + 规范 v1；标注执行/扩 60 待做 |
-| 8 | 扩到 60 条 + 批量跑 + 自动指标 | `report.md` 生成 | 待做 |
+| 8a | 建 60 条正式集（≥18 真实）+ 标注执行 | 有效样本 + N/M 记录 | 待做（Day 8 第一段） |
+| 8b | 批量跑 + 自动指标 + `report.md` | 四指标 + 双口径保留率 + commitment runs/items | 待做（Day 8 第二段） |
 | 9 | 盲评表 + 人工评分 + 统计 | 四指标 + CI | 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 别人 clone 后可复现 | 待做 |
 
@@ -56,7 +57,7 @@ python -m humanize eval --set data/eval/eval_set.jsonl   # Day 8 提供
 - `config/pipeline.yaml`、`config/persona.yaml`（3 套人设）
 - `src/humanize/cli.py`：run / validate / schema
 - `data/eval/seed_examples.jsonl`：4 条 synthetic smoke 样例
-- `tests/`：165 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合、pilot 结构
+- `tests/`：167 条测试，覆盖契约、缓存键分桶/字段覆盖、端到端重调、降级、ratio 审计、成本、seed、融合、投票、多消息、节奏兜底、省略检查、kept_facts 锚点、敏感桩、评估聚合、pilot 结构
 
 ## Day 2 下半段进度
 
@@ -273,7 +274,24 @@ flags: kept_facts_demoted, rewrite_ratio_over_limit
 - Day 8 正式集至少 30% 真实脱敏样本；报告写“有效 N 条（schema 1.2）+ 跳过 M 条旧 schema”。
 - `commitment_weakened` 改为逐条承诺：risk_flags 每条一项 `<fact>:<coverage>`，
   统计 `runs` 与 `items` 两个数。
-- `scripts/pilot_check.py`：结构/模板校验通过；测试 165 passed。
+- `scripts/pilot_check.py`：结构/模板校验通过；测试 167 passed。
+
+## Day 8 拆分与时间预算
+
+原计划“Day 8 一天出报告”不现实：60 条标注 × 8 分钟 ≈ 8 小时，再加建集、跑评估、写报告。
+**拆成两段，不压成一天**：
+
+- **Day 8a：建集 + 标注**
+  - 从 `data/eval/real_candidates.jsonl` 选 ≥18 条真实脱敏样本（`real_candidates_check.py` 校验），
+    加 42 条 synthetic/pilot，凑 60 条；
+  - 按 `docs/annotation_guide_v1.md` 执行标注；计时只取 core 段；
+  - 有效样本 N、跳过旧 schema M 记录；单标注者/双人 κ 如实写。
+- **Day 8b：跑评估 + 写报告**
+  - 批量跑（`--no-cache`，3 次采样/标签，`--vote-runs 3`）；
+  - `eval_summary.py` 出节奏/保留率/治理；人工指标汇总；
+  - `report.md`：四指标 + CI + 双口径保留率 + `commitment_weakened_runs/items` + work 扩写。
+
+真实候选每天 3–5 条、20 分钟，从 Day 7 就开始存；不要等 8a 当天找 18 条。
 
 ## 已知约束
 

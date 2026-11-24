@@ -76,6 +76,7 @@ python scripts/probe_report.py                                        # 稳定�
 python scripts/day5_regression.py                                     # Day 5 回归：链路/保留率/boundary
 python scripts/eval_summary.py --runs data/runs                       # 评估聚合：节奏/保留率/治理
 python scripts/pilot_check.py                                         # Day 7 pilot 结构与模板校验（零成本）
+python scripts/real_candidates_check.py                               # 真实候选池 18 条进度/PII 检查
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -85,7 +86,7 @@ python scripts/pilot_check.py                                         # Day 7 pi
 跑测试：
 
 ```powershell
-python -m pytest        # 165 passed
+python -m pytest        # 167 passed
 python -m ruff check src tests
 ```
 
@@ -133,10 +134,11 @@ src/humanize/
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/eval/pilot_10.jsonl        # Day 7 pilot：5 场景 × 2，反讽 5/5
-data/eval/annotations/          # 标注模板（10 条，5 条重叠）
+data/eval/real_candidates.jsonl # 真实脱敏候选，目标 18 条（每天 3–5 条）
+data/eval/annotations/          # A/B 标注模板、计时模板（10 条，5 条重叠）
 data/probe/stability_probe.jsonl  # 32 条探针（30 base + 2 补充，非评估集）
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 165 条测试
+tests/                          # 167 条测试
 docs/annotation_guide_v1.md     # Day 7 标注规范 v1（字段/流程/耗时/歧义）
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
@@ -208,7 +210,7 @@ docs/stability_probe.md         # 32 条探针的 Day 4 结果与判定
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | ✅ 探针两轮 + 方案 A + `vote_runs` 已实现 |
 | 5 | 人设状态 + 重写层 v1 + gate | ✅ Step 1–4（messages / rhythm / 省略 / kept_facts / 回归） |
 | 6 | 治理层最小版（残留 + 审计） | ✅ 敏感桩 + 评估聚合（压缩完成） |
-| 7–9 | pilot 10 条 / 扩 60 条 / 盲评 | pilot + 规范 ✅；标注执行与 60 条待做 |
+| 7–9 | pilot / 8a 建集+标注 / 8b 评估+报告 / 盲评 | pilot + 规范 ✅；8a/8b 待做 |
 | 10 | 复盘、ADR、README、v0.1 | 待做 |
 
 设计取舍见 [docs/decisions.md](docs/decisions.md)，接口契约见

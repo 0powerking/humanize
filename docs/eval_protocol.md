@@ -97,15 +97,22 @@ Day 5 起新增 `rhythm_profile: short_burst | single_msg | long_explain`，用�
 ### 3.6 Pilot（Day 7）
 
 - 数据：`data/eval/pilot_10.jsonl`，5 场景 × 2 条，反讽/非反讽 5/5，全部 `source=synthetic`。
-- 标注表：`data/eval/annotations/pilot_annotations_template.csv`，字段至少包含
+- 标注表：`data/eval/annotations/pilot_annotations_template.csv`（A，全部 10 条）；
+  `pilot_annotations_template_B.csv`（B，5 条重叠，`annotator_B` 列）。字段至少包含
   `user_sarcasm`（三态 + evidence）、`user_emotion_label` + `user_emotion_intensity`
   （0.0–1.0，步长 0.1）、`persona_consistency` 1–5、`rhythm_profile`、
   `omission_naturalness` 1–3（无省略填 NA）、`ab_preference`（pipe/baseline/tie/NA）。
 - **pilot 的唯一产出**：标注规范 v1 定稿、标注耗时估计、歧义字段清单；**不产出指标**，
   10 条的数字不能写进结论。
-- 双人标注：A 标全部 10 条，B 标 `is_overlap=1` 的 5 条算 κ；只有一人时注明单标注者，
+- 计时：`pilot_timing_template.csv`；第 1 条 warmup、最后 1–2 条 fatigue，**只取 core 段**
+  的中位数/范围/样本数。歧义当场记在 `docs/annotation_guide_v1.md` 末尾，不要标完回忆。
+- 双人：A 标全部 10 条，B 标 5 条重叠算 κ；B 模板留空/没人时注明“单标注者，无 κ”，
   Day 8 不得写双人 κ。
-- 真实样本：pilot 可全合成；Day 8 正式集**至少 30% 真实脱敏样本**，否则“像人”结论说服力打折。
+- 真实样本：pilot 可全合成；Day 8 正式集**至少 30% 真实脱敏样本**（60 条里至少 18 条）。
+  候选现在开始存 `data/eval/real_candidates.jsonl`，每天 3–5 条、20 分钟，用
+  `scripts/real_candidates_check.py` 校验；不要等 Day 8 当天找。
+- Day 8 拆两段：**8a 建集 + 标注；8b 跑评估 + 写报告**。60 条 × 8 分钟约 8 小时，
+  不要压成一天。
 
 ---
 

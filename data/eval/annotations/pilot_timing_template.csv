@@ -1,0 +1,11 @@
+sample_id,annotator_id,start_time,end_time,minutes,segment,notes
+pilot_01,,,,,warmup,
+pilot_02,,,,,core,
+pilot_03,,,,,core,
+pilot_04,,,,,core,
+pilot_05,,,,,core,
+pilot_06,,,,,core,
+pilot_07,,,,,core,
+pilot_08,,,,,core,
+pilot_09,,,,,core,
+pilot_10,,,,,fatigue,
