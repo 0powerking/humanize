@@ -60,6 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--lexicon", default=DEFAULT_LEXICON)
     run.add_argument("--out", default=None, help="run record directory (default: config)")
     run.add_argument("--provider", choices=["mock", "deepseek"], default=None)
+    run.add_argument(
+        "--vote-runs",
+        type=int,
+        choices=(1, 3),
+        default=None,
+        help="signal samples per module: 1 (runtime default) or 3 (evaluation)",
+    )
     run.add_argument("--sample", action="append", default=None, help="only these sample ids")
     run.add_argument("--limit", type=int, default=None)
     run.add_argument("--dry-run", action="store_true", help="do not persist run records")
@@ -96,6 +103,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     load_env()
     config = load_config(args.config)
+    if args.vote_runs is not None:
+        config = config.model_copy(deep=True)
+        config.signals = config.signals.model_copy(
+            update={"vote_runs": args.vote_runs}
+        )
     personas = load_personas(args.personas)
     lexicon = load_lexicon(args.lexicon)
     inputs = load_run_inputs(args.input)

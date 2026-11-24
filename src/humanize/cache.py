@@ -11,6 +11,7 @@ rewrite payload and the fingerprint (ADR-004).
 from __future__ import annotations
 
 import json
+from bisect import bisect_right
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,84 @@ from .io import now_iso, stable_hash, write_json
 from .llm import LLMClient, LLMResult
 from .schemas import SignalBundle
 
+#: ADR-008 plan A: 5 bins for valence/arousal, 3 bins for confidence.
+_VALENCE_EDGES = (-0.6, -0.2, 0.2, 0.6)
+_CONFIDENCE_EDGES = (0.6, 0.8)
+
+
+def _bucket(value: Any, edges: tuple[float, ...]) -> int | None:
+    try:
+        return bisect_right(edges, float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _trait_bucket(value: Any) -> str | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0.34:
+        return "low"
+    if number < 0.67:
+        return "mid"
+    return "high"
+
+
+def fingerprint_from_view(view: Mapping[str, Any]) -> dict[str, Any]:
+    """Coarse, semantic view used for the cache key (ADR-008 plan A).
+
+    Labels and type sets are exact; continuous values are bucketed so a ±0.1
+    sampling wobble does not invalidate an otherwise identical rewrite. The
+    rewrite prompt still receives the exact values from ``rewrite_view``.
+    """
+    sarcasm = view.get("sarcasm") or {}
+    emotion = view.get("emotion") or {}
+    user_emotion = emotion.get("user_emotion") or {}
+    ai_smell = view.get("ai_smell") or {}
+    persona = view.get("persona_state") or {}
+    traits = persona.get("applied") or {}
+
+    return {
+        "sarcasm": {
+            "label": sarcasm.get("label"),
+            "target": sarcasm.get("target"),
+            "confidence_bucket": _bucket(sarcasm.get("confidence"), _CONFIDENCE_EDGES),
+        },
+        "emotion": {
+            "label": user_emotion.get("label"),
+            "tone": emotion.get("assistant_tone_target"),
+            "valence_bucket": _bucket(emotion.get("valence"), _VALENCE_EDGES),
+            "arousal_bucket": _bucket(emotion.get("arousal"), _VALENCE_EDGES),
+        },
+        "ai_smell": {
+            "types": sorted(
+                {
+                    hit.get("type")
+                    for hit in ai_smell.get("hits", [])
+                    if hit.get("type")
+                }
+            ),
+        },
+        "persona_state": {
+            "persona_id": persona.get("persona_id"),
+            "mood": traits.get("mood"),
+            "traits": {
+                key: _trait_bucket(value)
+                for key, value in traits.items()
+                if key != "mood"
+            },
+        },
+    }
+
+
+def fingerprint_view(signals: SignalBundle) -> dict[str, Any]:
+    return fingerprint_from_view(signals.rewrite_view())
+
 
 def signal_fingerprint(signals: SignalBundle) -> str:
-    """Hash of exactly what the rewrite stage consumes."""
-    return stable_hash(signals.rewrite_view())
+    """Hash of the rewrite stage's *semantic* input (labels + bucketed values)."""
+    return stable_hash(fingerprint_view(signals))
 
 
 def make_cache_key(
@@ -123,16 +198,20 @@ class CachedClient:
             )
 
         signal_hash: str | None = None
+        key_payload: Mapping[str, Any] = payload
         if prompt_id == "rewrite":
             view = payload.get("signals")
             if isinstance(view, dict):
-                signal_hash = stable_hash(view)
+                signal_hash = stable_hash(fingerprint_from_view(view))
+                # Exact values stay in the prompt payload, but not in the key:
+                # otherwise bucketing the fingerprint would be pointless.
+                key_payload = {key: value for key, value in payload.items() if key != "signals"}
 
         key = make_cache_key(
             stage=prompt_id,
             model=model,
             prompt_version=prompt_version,
-            payload=payload,
+            payload=key_payload,
             signal_hash=signal_hash,
             temperature=temperature,
             seed=seed,

@@ -99,6 +99,20 @@ def test_run_signals_returns_usage_without_rewrite(pipeline, sample) -> None:
     assert usage.cache_hits == 0
 
 
+def test_vote_runs_three_queries_each_signal(
+    config, personas, lexicon, client, sample
+) -> None:
+    voted = config.model_copy(deep=True)
+    voted.signals = voted.signals.model_copy(update={"vote_runs": 3})
+    signals, usage = _pipeline(client, voted, personas, lexicon).run_signals(
+        sample("e001_overwork_advice")
+    )
+
+    assert usage.calls == 9  # 3 modules x 3 samples
+    assert usage.cache_hits == 0
+    assert signals.meta.vote_runs == 3
+
+
 def test_rewrite_removes_enumeration(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
 

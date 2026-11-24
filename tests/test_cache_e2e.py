@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
-from humanize.cache import CachedClient, CacheStore
+from humanize.cache import CachedClient, CacheStore, fingerprint_from_view
 from humanize.config import PersonaBook, PipelineConfig
 from humanize.io import stable_hash
 from humanize.lexicon import Lexicon
@@ -92,7 +92,9 @@ def test_rewrite_payload_has_no_meta(config, personas, lexicon, sample) -> None:
     payload = capture.rewrite_payloads[0]
     assert set(payload["signals"]) == {"sarcasm", "emotion", "ai_smell", "persona_state"}
     assert "meta" not in payload["signals"]
-    assert stable_hash(payload["signals"]) == record.meta["signal_fingerprint"]
+    assert stable_hash(fingerprint_from_view(payload["signals"])) == record.meta[
+        "signal_fingerprint"
+    ]
 
 
 def test_signal_content_change_invalidates_rewrite_cache(

@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from humanize.cache import CachedClient, CacheStore, make_cache_key, signal_fingerprint
+from humanize.cache import (
+    CachedClient,
+    CacheStore,
+    fingerprint_view,
+    signal_fingerprint,
+)
 from humanize.io import stable_hash
 from humanize.llm import LLMResult
 
@@ -12,6 +17,32 @@ PAYLOAD: dict[str, Any] = {
     "raw_reply": "在吗",
     "signals": {"sarcasm": {"label": "literal"}, "emotion": {"valence": 0.0}},
 }
+
+
+def _payload_with(
+    valence: float, confidence: float = 0.9, smell_type: str = "hedge"
+) -> dict[str, Any]:
+    return {
+        **PAYLOAD,
+        "signals": {
+            "sarcasm": {
+                "label": "sarcastic",
+                "target": "assistant",
+                "confidence": confidence,
+            },
+            "emotion": {
+                "user_emotion": {"label": "不满"},
+                "assistant_tone_target": "banter",
+                "valence": valence,
+                "arousal": 0.6,
+            },
+            "ai_smell": {"hits": [{"type": smell_type}]},
+            "persona_state": {
+                "persona_id": "p_sunyou",
+                "applied": {"warmth": 0.55, "mood": "neutral"},
+            },
+        },
+    }
 
 
 class CountingClient:
@@ -137,15 +168,9 @@ def test_corrupt_entry_is_a_miss(tmp_path: Path) -> None:
     client = _client(store, inner)
     _call(client)
 
-    key = make_cache_key(
-        stage="rewrite",
-        model="m",
-        prompt_version="rw.v1",
-        payload=PAYLOAD,
-        signal_hash=stable_hash(PAYLOAD["signals"]),
-        temperature=0.9,
-    )
-    store.path_for(key).write_text("{not json", encoding="utf-8")
+    files = list(store.root.rglob("*.json"))
+    assert len(files) == 1
+    files[0].write_text("{not json", encoding="utf-8")
 
     _call(client)
 
@@ -180,6 +205,61 @@ def test_signal_content_is_part_of_the_key(tmp_path: Path) -> None:
     assert len(inner.calls) == 2
 
 
+def test_valence_within_same_bucket_hits(tmp_path: Path) -> None:
+    # -0.61 and -0.64 are both in the lowest valence bucket (ADR-008 plan A).
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    _call(client, _payload_with(-0.61))
+    result = _call(client, _payload_with(-0.64))
+
+    assert len(inner.calls) == 1
+    assert result.cached is True
+
+
+def test_valence_crossing_a_bucket_boundary_misses(tmp_path: Path) -> None:
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    _call(client, _payload_with(-0.59))
+    _call(client, _payload_with(-0.61))
+
+    assert len(inner.calls) == 2
+
+
+def test_confidence_within_same_bucket_hits(tmp_path: Path) -> None:
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    _call(client, _payload_with(0.0, confidence=0.85))
+    request = _call(client, _payload_with(0.0, confidence=0.95))
+
+    assert len(inner.calls) == 1
+    assert request.cached is True
+
+
+def test_bucketing_turns_valence_jitter_into_hits(tmp_path: Path) -> None:
+    # Three real samples would produce valence around -0.6 +/- 0.05; without
+    # bucketing these are three different keys (two unnecessary rewrites).
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    for value in (-0.65, -0.61, -0.63):
+        _call(client, _payload_with(value))
+
+    assert len(inner.calls) == 1
+
+
+def test_ai_smell_type_set_change_misses(tmp_path: Path) -> None:
+    inner = CountingClient()
+    client = _client(_store(tmp_path), inner)
+
+    _call(client, _payload_with(0.0, smell_type="hedge"))
+    _call(client, _payload_with(0.0, smell_type="enumeration"))
+
+    assert len(inner.calls) == 2
+
+
 def test_cache_files_are_sharded(tmp_path: Path) -> None:
     store = _store(tmp_path)
     client = _client(store, CountingClient())
@@ -192,4 +272,4 @@ def test_cache_files_are_sharded(tmp_path: Path) -> None:
 
 def test_fingerprint_matches_payload_view_hash(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
-    assert signal_fingerprint(record.signals) == stable_hash(record.signals.rewrite_view())
+    assert signal_fingerprint(record.signals) == stable_hash(fingerprint_view(record.signals))

@@ -21,6 +21,7 @@ def test_config_loads_with_expected_defaults(config) -> None:
     }
     assert config.thresholds.rewrite_gate_ai_smell == 0.25
     assert config.cache.enabled is True
+    assert config.signals.vote_runs == 1
 
 
 def test_config_hash_changes_when_prompt_version_bumps(config) -> None:

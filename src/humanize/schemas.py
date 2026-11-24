@@ -198,6 +198,7 @@ class SignalMeta(FrozenModel):
     latency_ms: int = 0
     prompt_versions: dict[str, str] = Field(default_factory=dict)
     degraded: tuple[str, ...] = ()
+    vote_runs: int = Field(default=1, ge=1, le=3)
 
 
 class SignalBundle(FrozenModel):

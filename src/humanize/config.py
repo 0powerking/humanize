@@ -81,12 +81,18 @@ class PathsConfig(StrictModel):
     runs_dir: str = "data/runs"
 
 
+class SignalConfig(StrictModel):
+    # 1 = single sample at runtime (default); 3 = majority vote for evaluation.
+    vote_runs: Literal[1, 3] = 1
+
+
 class PipelineConfig(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     provider: Literal["mock", "deepseek"] = "mock"
     base_url: str = "https://api.deepseek.com"
     api_key_env: str = "DEEPSEEK_API_KEY"
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    signals: SignalConfig = Field(default_factory=SignalConfig)
     prompt_versions: dict[str, str] = Field(default_factory=dict)
     thresholds: Thresholds = Field(default_factory=Thresholds)
     govern: GovernConfig = Field(default_factory=GovernConfig)

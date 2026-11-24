@@ -58,6 +58,7 @@ from .schemas import (
     Usage,
     Versions,
 )
+from .voting import vote_ai_smell, vote_emotion, vote_sarcasm
 
 _PHONE = r"(?<!\d)1[3-9]\d{9}(?!\d)"
 _URL = r"(?:https?://|www\.)\S+"
@@ -174,6 +175,7 @@ class HumanizePipeline:
             "raw_reply": inp.raw_reply,
             "persona_ref": inp.persona.model_dump(mode="json"),
         }
+        runs = self.cfg.signals.vote_runs
         jobs = (
             ("sarcasm", "signal.sarcasm", base),
             ("emotion", "signal.emotion", base),
@@ -192,17 +194,27 @@ class HumanizePipeline:
         )
 
         route = self.cfg.models.signal
-        with ThreadPoolExecutor(max_workers=len(jobs), thread_name_prefix="signal") as pool:
-            futures = {
-                pool.submit(self._call, name, prompt_id, payload, route): name
-                for name, prompt_id, payload in jobs
-            }
-            outcomes = {futures[future]: future.result() for future in futures}
+        with ThreadPoolExecutor(
+            max_workers=len(jobs) * runs, thread_name_prefix="signal"
+        ) as pool:
+            futures: list[tuple[str, Any]] = []
+            for name, prompt_id, payload in jobs:
+                for _ in range(runs):
+                    futures.append(
+                        (name, pool.submit(self._call, name, prompt_id, payload, route))
+                    )
+            grouped: dict[str, list[_Outcome]] = {name: [] for name, _, _ in jobs}
+            for name, future in futures:
+                grouped[name].append(future.result())
 
         degraded: set[str] = set()
 
-        sarcasm = self._as(SarcasmSignal, outcomes["sarcasm"])
-        if sarcasm is None:
+        sarcasm_items = [
+            signal
+            for outcome in grouped["sarcasm"]
+            if (signal := self._as(SarcasmSignal, outcome)) is not None
+        ]
+        if not sarcasm_items:
             degraded.add("sarcasm")
             sarcasm = SarcasmSignal(
                 label=SarcasmLabel.uncertain,
@@ -210,9 +222,17 @@ class HumanizePipeline:
                 target=SarcasmTarget.none,
                 reason="sarcasm signal failed; neutral fallback",
             )
+        else:
+            if len(sarcasm_items) < runs:
+                degraded.add("sarcasm_partial")
+            sarcasm = vote_sarcasm(sarcasm_items) if runs > 1 else sarcasm_items[0]
 
-        emotion = self._as(EmotionSignal, outcomes["emotion"])
-        if emotion is None:
+        emotion_items = [
+            signal
+            for outcome in grouped["emotion"]
+            if (signal := self._as(EmotionSignal, outcome)) is not None
+        ]
+        if not emotion_items:
             degraded.add("emotion")
             emotion = EmotionSignal(
                 user_emotion=EmotionLabel(label="unknown", intensity=0.0),
@@ -220,6 +240,10 @@ class HumanizePipeline:
                 arousal=0.5,
                 assistant_tone_target=ToneTarget.matter_of_fact,
             )
+        else:
+            if len(emotion_items) < runs:
+                degraded.add("emotion_partial")
+            emotion = vote_emotion(emotion_items) if runs > 1 else emotion_items[0]
 
         if rule_findings is None:
             degraded.add("ai_smell")
@@ -231,22 +255,29 @@ class HumanizePipeline:
                 notes="lexicon scan failed; conservative default",
             )
         else:
-            extra = self._as(AiSmellExtra, outcomes["ai_smell"])
-            if extra is None:
-                degraded.add("ai_smell_llm")
-                ai_smell = merge_ai_smell(
-                    inp.raw_reply,
-                    rule_findings,
-                    (),
-                    model_notes="llm unavailable; rules only",
-                )
-            else:
-                ai_smell = merge_ai_smell(
-                    inp.raw_reply,
-                    rule_findings,
-                    extra.extra_hits,
-                    extra.notes,
-                )
+            ai_items = []
+            for outcome in grouped["ai_smell"]:
+                extra = self._as(AiSmellExtra, outcome)
+                if extra is None:
+                    degraded.add("ai_smell_llm")
+                    ai_items.append(
+                        merge_ai_smell(
+                            inp.raw_reply,
+                            rule_findings,
+                            (),
+                            model_notes="llm unavailable; rules only",
+                        )
+                    )
+                else:
+                    ai_items.append(
+                        merge_ai_smell(
+                            inp.raw_reply,
+                            rule_findings,
+                            extra.extra_hits,
+                            extra.notes,
+                        )
+                    )
+            ai_smell = vote_ai_smell(ai_items) if runs > 1 else ai_items[0]
 
         persona_state: PersonaState = self.personas.resolve(inp.persona.persona_id)
 
@@ -256,7 +287,12 @@ class HumanizePipeline:
             for key, value in self.cfg.prompt_versions.items()
             if key.startswith("signal.")
         }
-        results = [outcome.result for outcome in outcomes.values() if outcome.result is not None]
+        results = [
+            outcome.result
+            for group in grouped.values()
+            for outcome in group
+            if outcome.result is not None
+        ]
         reported_model = next(
             (result.model for result in results if result.model), self.client.name
         )
@@ -272,6 +308,7 @@ class HumanizePipeline:
                     latency_ms=latency_ms,
                     prompt_versions=prompt_versions,
                     degraded=tuple(sorted(degraded)),
+                    vote_runs=runs,
                 ),
             ),
             latency_ms,

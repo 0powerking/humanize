@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from humanize.cache import make_cache_key, signal_fingerprint
+from humanize.schemas import SarcasmLabel
 
 PAYLOAD = {"raw_reply": "在吗", "scene": "casual"}
 
@@ -86,13 +87,53 @@ def test_signal_fingerprint_ignores_diagnostic_prose(pipeline, sample) -> None:
     assert signal_fingerprint(signals) == signal_fingerprint(rephrased)
 
 
-def test_signal_fingerprint_tracks_signal_content(pipeline, sample) -> None:
+def test_signal_fingerprint_tracks_labels(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
     signals = record.signals
 
     different = signals.model_copy(
         update={
-            "ai_smell": signals.ai_smell.model_copy(update={"score": 0.01}),
+            "sarcasm": signals.sarcasm.model_copy(update={"label": SarcasmLabel.sarcastic}),
         }
     )
     assert signal_fingerprint(signals) != signal_fingerprint(different)
+
+
+def test_signal_fingerprint_ignores_ai_smell_score(pipeline, sample) -> None:
+    record = pipeline.run(sample("e001_overwork_advice"))
+    signals = record.signals
+
+    different = signals.model_copy(
+        update={"ai_smell": signals.ai_smell.model_copy(update={"score": 0.01})}
+    )
+    assert signal_fingerprint(signals) == signal_fingerprint(different)
+
+
+def test_fingerprint_buckets_valence(pipeline, sample) -> None:
+    record = pipeline.run(sample("e002_sarcasm_late"))
+    signals = record.signals
+
+    def with_valence(value: float):
+        return signals.model_copy(
+            update={"emotion": signals.emotion.model_copy(update={"valence": value})}
+        )
+
+    assert signal_fingerprint(with_valence(0.0)) == signal_fingerprint(with_valence(0.1))
+    assert signal_fingerprint(with_valence(0.0)) != signal_fingerprint(with_valence(0.3))
+
+
+def test_fingerprint_buckets_confidence(pipeline, sample) -> None:
+    record = pipeline.run(sample("e002_sarcasm_late"))
+    signals = record.signals
+
+    def with_confidence(value: float):
+        return signals.model_copy(
+            update={"sarcasm": signals.sarcasm.model_copy(update={"confidence": value})}
+        )
+
+    assert signal_fingerprint(with_confidence(0.85)) == signal_fingerprint(
+        with_confidence(0.95)
+    )
+    assert signal_fingerprint(with_confidence(0.85)) != signal_fingerprint(
+        with_confidence(0.5)
+    )

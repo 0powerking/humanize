@@ -26,6 +26,11 @@ models:
     temperature: 0.9      # 重写需要多样性
     seed: 42              # 同上：网关接受 seed，但实测不保证输出一致
 
+# 信号层采样次数：1 = 运行时单次（默认）；3 = 评估用多数投票。
+# 多数投票使调用数约 ×3（信号层），评估总成本约 ×2（ADR-008）。
+signals:
+  vote_runs: 1
+
 # 每个模块独立版本号；prompt 改动必须同步 bump，否则缓存会错误命中。
 prompt_versions:
   signal.sarcasm: sig.sarcasm.v1
