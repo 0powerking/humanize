@@ -52,7 +52,12 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 - `cache.signal_fingerprint()` = 对 `SignalBundle` 的语义内容做 sha256；
 - **剔除易变字段**（`meta.latency_ms`），否则同一语义的两次运行永远不命中；
 - `make_cache_key(stage, model, prompt_version, payload, signal_hash)` 把五者一起哈希；
-- `config/pipeline.yaml` 里 `cache.include_signal_hash` 默认且应保持 `true`。
+- `make_cache_key(stage, model, prompt_version, payload, signal_hash, temperature)`
+  把这些维度一起哈希；`payload` 里的 `signals` 本身就是信号视图，所以即使没有
+  `signal_hash`，"原文没变、信号变了"也会 miss —— `signal_hash` 是对这条依赖的显式声明，
+  防止将来payload 改成只传信号 id 时静默退化。
+- 原 `cache.include_signal_hash` 开关已删除：payload 已包含信号视图，这个开关**无法**
+  制造"安全/不安全"的差异，只会让人误以为可以关掉；留着一个没有正确性含义的开关比没有更糟。
 
 **验收测试**（Day 1 已写，Day 2 接磁盘缓存后继续用）：
 - `test_prompt_version_bump_invalidates_key`
@@ -64,6 +69,24 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 **代价**：缓存命中率比"只按原文"低；换来的是不会拿到与证据不匹配的重写。
 **如果错了会怎么发现**：改一版 signal prompt 后重跑，缓存命中数不降反升 → 键漏了维度。
 
+**2026-11-24 修订（Day 2 缓存落地）**：按"缓存是重写阶段输入的纯函数"执行。
+
+- 新增 `SignalBundle.rewrite_view()`，只含 `sarcasm / emotion / ai_smell / persona_state`
+  四个语义块；重写 payload 和 `signal_fingerprint` **用同一个视图**。
+- `meta` 不再进入重写 prompt：模型名、prompt 版本、降级标记对改写没有信息价值，
+  放进去只会让缓存键依赖"谁产出的信号"而不是"信号说了什么"。
+- 因此**换模型但信号内容相同 → 命中**；content 变了 → miss。代价是失去按模型分区，
+  由 `config_hash` + `versions` 承担可追溯性。
+- provenance 仍写进 `RunRecord`；命中缓存时 `meta.cache_source_models` 记录缓存条目的
+  来源模型，避免"用了旧模型的结果却看不出来"。
+- 新增测试：`test_signal_fingerprint_ignores_provenance`、
+  `test_rewrite_payload_has_no_meta`、`test_signal_content_change_invalidates_rewrite_cache`
+  （端到端：改 sarcasm label → 指纹变 → 重写重新调用）、`test_cache_source_models` 语义。
+
+**已知取舍**：信号层本身也被缓存，所以"改一条信号内容"在真实系统里必须伴随信号层
+版本/模型/词典变化才能穿过缓存；端到端测试显式 bump 了 `signal.sarcasm` 版本来模拟
+这个真实路径，而不是绕过缓存。
+
 ---
 
 ## ADR-005 改写幅度闸门，并重算 ratio
@@ -71,11 +94,21 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 **背景**：不是所有回复都值得改。原文已经自然时，强行重写只会引入语义漂移。
 
 **决策**：
-- `ai_smell.score < 0.25` 时允许 `noop`（原文直出，`rewrite_ratio=0`）；
+- 阈值写在 `config/pipeline.yaml` 的 `thresholds.rewrite_gate_ai_smell`（当前 0.25），
+  `config.py` 里的同名字段只是 YAML 缺字段时的兜底，不参与正常路径；
+- `ai_smell.score < 阈值` 时允许 `noop`（原文直出，`rewrite_ratio=0`）；
 - 重写层必须输出 `kept_facts`，治理层据此核对事实是否被改掉；
 - **ratio 由管线用 `SequenceMatcher` 重算**，不信任模型自报；偏差 > 0.2 记
   `ratio_self_report_mismatch`，超过 `max_rewrite_ratio` 记 `rewrite_ratio_over_limit`
   （只记录，不截断文本——截断会制造病句）。
+
+**Day 8 调参口径**（写死在这里，避免拍脑袋）：不按 ai_smell 分数分布调，按两类错误调——
+
+1. **该不改却改了**：原文已经自然、却被强制重写的样本比例（`noop` 本应命中的样本）；
+2. **该改却没改**：AI 味明显、却因为分数低于阈值被放行的样本比例。
+
+阈值由这两类错误在评估集上的权衡决定，并同时报告两个错误率；只看单项会优化出一个
+在另一侧很糟的阈值。
 
 **代价**：多一次 diff 计算；模型"少改"时会被判为 mismatched。
 **发现方式**：如果 `noop_without_gate_permission` 频繁出现，说明 prompt 没遵守 gate。
@@ -92,3 +125,30 @@ prompt / 模型 / 词典，产出的 `SignalBundle` 变了，缓存却仍然命�
 
 **代价**：v1 的输出里可能仍有残留套路。
 **发现方式**：评估报告里 `residue_hits > 0` 的比例就是 1.5 阶段的优先级依据。
+
+---
+
+## Day 5 前置任务：从"单条消息"到"聊天节奏"（提案，未实施）
+
+**观察**：真人即时聊天的"人味"很大一部分来自节奏——短句、一条拆成多条发、单条很少
+超过 20 字。当前 `RewriteOutput` 只有单个 `text`，等于假设"一条输入对应一条输出"，
+结果仍然是"消息块"而不是"聊天"。
+
+**状态：未实施，现在不改 schema。** Day 5 重写层定稿前按下面三件事改：
+
+1. `RewriteOutput` 改为 `messages: list[str]`（1–4 条）；`message_count` 和
+   `max_msg_chars` 由管线从 `messages` 重算，不信任模型自报；下游不支持多条时由治理层
+   合并成一条，并在审计里记录 `merged_by_governance=true`。
+2. `config` 增加 `rhythm` 段：`target_msg_chars_p50`、`p95`、`max_messages_per_reply`、
+   `split_allowed_scenes`（`work`/`boundary` 等正式场景不拆）。
+3. `prompts/rewrite.md` 增加节奏规则：日常闲聊优先拆 2–3 条短消息，每条独立可读、
+   承接上一条；**不要为拆而拆**，正式场景保持单条。
+
+**评估侧同步加**：
+- 「消息长度分布」：P50/P95、超 35 字占比（零人工成本，自动算）；
+- 「分条合理性」：抽 20 条人工 1–3 分（1=不该拆却拆了，3=拆得自然）；
+- 评估集每条加 `rhythm_profile`：`short_burst / single_msg / long_explain`，
+  用来区分"该拆没拆"和"不该拆却拆了"。
+
+**风险**：拆条会放大语气词和碎片化，正式场景容易显得轻浮；所以 `split_allowed_scenes`
+是硬开关，且评估必须按 `rhythm_profile` 分层报告，不能只看总体均值。

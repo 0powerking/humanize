@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
+from .cache import CachedClient, CacheStore
 from .config import ConfigError, PipelineConfig, load_config, load_personas
 from .env import load_env
 from .io import InputError, load_run_inputs, persist_run_record
@@ -61,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--sample", action="append", default=None, help="only these sample ids")
     run.add_argument("--limit", type=int, default=None)
     run.add_argument("--dry-run", action="store_true", help="do not persist run records")
+    run.add_argument("--no-cache", action="store_true", help="bypass the disk cache")
     run.add_argument("--quiet", action="store_true", help="no text preview")
     run.set_defaults(func=_cmd_run)
 
@@ -109,6 +111,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         raise InputError(f"no samples to run in {args.input}")
 
     client = _build_client(args.provider, config, lexicon)
+    if config.cache.enabled and not args.no_cache:
+        client = CachedClient(
+            client,
+            CacheStore(config.cache.dir),
+            config.prompt_versions,
+        )
     pipeline = HumanizePipeline(
         config=config,
         personas=personas,
@@ -183,6 +191,7 @@ def _print_summary(record: RunRecord, saved: Path | None, show_text: bool) -> No
         f"ai_smell={signals.ai_smell.score:.2f} gate={gate} "
         f"ratio={record.rewrite.rewrite_ratio:.2f} "
         f"risk={len(record.rewrite.risk_flags)} "
+        f"cache={record.usage.cache_hits} "
         f"residue={len(record.govern.residue.hits)} "
         f"sensitive={record.govern.sensitive.action}"
         + (f" degraded={','.join(signals.meta.degraded)}" if signals.meta.degraded else "")

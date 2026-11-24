@@ -42,6 +42,24 @@ def test_signal_fingerprint_ignores_latency(pipeline, sample) -> None:
     assert signal_fingerprint(signals) == signal_fingerprint(slower)
 
 
+def test_signal_fingerprint_ignores_provenance(pipeline, sample) -> None:
+    record = pipeline.run(sample("e001_overwork_advice"))
+    signals = record.signals
+
+    reprovenanced = signals.model_copy(
+        update={
+            "meta": signals.meta.model_copy(
+                update={
+                    "model": "another-provider-model",
+                    "prompt_versions": {"signal.sarcasm": "sig.sarcasm.v99"},
+                    "degraded": ("sarcasm",),
+                }
+            )
+        }
+    )
+    assert signal_fingerprint(signals) == signal_fingerprint(reprovenanced)
+
+
 def test_signal_fingerprint_tracks_signal_content(pipeline, sample) -> None:
     record = pipeline.run(sample("e001_overwork_advice"))
     signals = record.signals

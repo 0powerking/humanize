@@ -59,9 +59,8 @@ govern:
 cache:
   enabled: true
   dir: data/cache
-  # 重写阶段缓存键必须包含信号指纹，避免"原始回复没变、信号变了"时错误命中。
-  # 不要关闭；关闭后只能用于纯文本级缓存实验。
-  include_signal_hash: true
+  # 重写缓存键 = 模型 + prompt 版本 + 温度 + payload（含信号视图）+ 信号指纹。
+  # 信号内容进入 payload，所以"原文没变、信号变了"必然 miss，见 ADR-004。
 
 cost:
   budget_yuan: 50.0

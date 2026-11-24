@@ -194,6 +194,21 @@ class SignalBundle(FrozenModel):
     persona_state: PersonaState
     meta: SignalMeta
 
+    def rewrite_view(self) -> dict[str, Any]:
+        """The only signal content the rewrite stage consumes.
+
+        Provenance (``meta.*``) is excluded on purpose: the rewriter does not
+        need to know which model produced the signals, and including it would
+        make the cache key depend on that provenance instead of on content.
+        Used by both the rewrite payload and ``signal_fingerprint`` (ADR-004).
+        """
+        return {
+            "sarcasm": self.sarcasm.model_dump(mode="json"),
+            "emotion": self.emotion.model_dump(mode="json"),
+            "ai_smell": self.ai_smell.model_dump(mode="json"),
+            "persona_state": self.persona_state.model_dump(mode="json"),
+        }
+
 
 # --------------------------------------------------------------------------- #
 # Stage 3 rewrite

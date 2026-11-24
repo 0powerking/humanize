@@ -6,10 +6,11 @@
 它不是聊天机器人，也不生成回复 —— 它只负责把模型默认的"AI 味"压回真人即时聊天的分布，
 并且在拿不准的时候**允许不改**。
 
-> 当前状态：**第 1 阶段 / Day 2 上半段**。五段管线已打通；`DeepSeekClient` 与 4 个 v0 prompt
-> 已通过单条真实 smoke。默认仍走 `--provider mock`（离线、零成本），真实调用用
-> `--provider deepseek`。仓库里只有 4 条 `source=synthetic` 的 smoke 样例，
-> **还没有评估集，也没有评估数字**；磁盘缓存与成本记账在 Day 2 下半段。
+> 当前状态：**第 1 阶段 / Day 2 下半段（缓存完成）**。五段管线已打通；`DeepSeekClient`
+> 与 4 个 v0 prompt 已通过真实 smoke；磁盘缓存按信号指纹失效，冷跑 4 次调用 → 热跑
+> 4 次命中、0 token、0 成本。默认仍走 `--provider mock`（离线、零成本）。
+> 仓库里只有 4 条 `source=synthetic` 的 smoke 样例，**还没有评估集，也没有评估数字**。
+> 成本换算、seed 固定、多消息节奏（Day 5 前置）尚待做。
 
 ---
 
@@ -51,12 +52,12 @@ python -m humanize run --provider deepseek --sample e002_sarcasm_late
 预期输出（每条样本一行摘要，并写入 `data/runs/<日期>/`）：
 
 ```
-[e001_overwork_advice] scene=casual ai_smell=1.00 gate=rewrite ratio=0.80 risk=1 residue=0 sensitive=pass
+[e001_overwork_advice] scene=casual ai_smell=1.00 gate=rewrite ratio=0.80 risk=1 cache=0 residue=0 sensitive=pass
     raw: 其实，换个工作并不是一件坏事。首先，你需要评估自己的核心诉求；其次，观察市场机会……
     out: 换个工作也不算啥坏事。
     ops: 删掉列举句式; 删掉列举句式; 删掉列举句式
     -> data\runs\2026-11-23\e001_overwork_advice__c2ae8cd8.json
-[e004_natural_noop] scene=casual ai_smell=0.00 gate=noop ratio=0.00 risk=0 residue=0 sensitive=pass
+[e004_natural_noop] scene=casual ai_smell=0.00 gate=noop ratio=0.00 risk=0 cache=0 residue=0 sensitive=pass
 ```
 
 其他命令：
@@ -66,6 +67,7 @@ python -m humanize validate           # 校验 config / persona / lexicon / prom
 python -m humanize schema signals     # 打印某一层的 JSON Schema
 python -m humanize run --sample e002_sarcasm_late --dry-run
 python -m humanize run --provider deepseek --sample e002_sarcasm_late
+python -m humanize run --no-cache     # 绕过磁盘缓存，强制重新调用
 ```
 
 > 当前 key 对应的网关会把请求的 `deepseek-chat` 实际路由到 `deepseek-flash`。
@@ -75,7 +77,7 @@ python -m humanize run --provider deepseek --sample e002_sarcasm_late
 跑测试：
 
 ```powershell
-python -m pytest        # 48 passed
+python -m pytest        # 61 passed
 python -m ruff check src tests
 ```
 
@@ -123,7 +125,7 @@ src/humanize/
   config.py  io.py  cli.py
 data/eval/seed_examples.jsonl   # 4 条 synthetic smoke 样例
 data/runs/                      # 每次运行的完整记录（gitignore）
-tests/                          # 35 条测试
+tests/                          # 61 条测试
 docs/decisions.md               # 工程决策记录（ADR）
 docs/phase1_plan.md             # 第一阶段计划与进度
 ```
@@ -142,24 +144,34 @@ docs/phase1_plan.md             # 第一阶段计划与进度
 | `versions` | git commit、config hash、prompt 版本、模型名 |
 | `meta` | provider、`signal_fingerprint`、lexicon 版本、降级模块 |
 
-`signal_fingerprint` 是 Day 2 缓存键的一部分：原始回复没变但信号变了（换 prompt / 换模型 /
-改词典），重写缓存必须失效（ADR-004）。
+`signal_fingerprint` 是缓存键的一部分，只哈希 `rewrite_view`（四个语义块，不含 `meta`）。
+原始回复没变但信号内容变了（换 prompt / 改词典 / 换模型且输出不同），重写缓存必须失效；
+换模型但信号内容完全相同则命中，命中来源记录在 `meta.cache_source_models`（ADR-004）。
+
+### 缓存
+
+- 键 = `stage + model + prompt_version + temperature + payload + signal_fingerprint`
+- 位置 `data/cache/<前两位>/<hash>.json`，一条记录一个文件；损坏的条目按 miss 处理
+- 冷跑后热跑：`cache=4`、`usage.calls=0`、`prompt_tokens=0`、`cost_yuan=0`
+- 只对非缓存调用计费，避免热跑把成本算重
+- `data/cache/` 已 gitignore；`--no-cache` 可强制穿透
 
 ## 当前限制（诚实版）
 
-1. **重写质量不代表最终效果**：`MockClient` 的改写是"删句子 + 词典替换"，粗暴且会过度删除
-   （e003 的 `rewrite_ratio` 达到 0.91，已触发 `rewrite_ratio_over_limit`）。它只证明管线形状。
-2. **反讽/情绪是关键词规则**，不是模型判断；e001 里"换个工作"没被识别成焦虑就是例证。
+1. **`MockClient` 的重写质量不代表最终效果**：它的改写是"删句子 + 词典替换"，粗暴且会过度删除
+   （e003 的 `rewrite_ratio` 曾经到 0.91）。真实 `deepseek` provider 的输出明显更好，但 v0 prompt
+   仍会触发 `rewrite_ratio_over_limit`，Day 5 调参后重新看这组数字。
+2. **mock 的反讽/情绪是关键词规则**，不是模型判断；`deepseek` provider 走的是 prompt，两者不要混谈。
 3. **没有评估集**，也没有任何指标数字；4 条样例只用于 smoke test，不能当结论。
 4. **治理层只检测不重写**：命中残留只记录 + 写明"deferred (phase 1.5)"。
-5. 本机未安装 git，仓库尚未 `git init`；`.gitignore` 已就绪，装好后一条命令即可。
+5. git 已初始化（`b226712`），但**没有配置 remote**，Day 8 前只在本地提交。
 
 ## Roadmap
 
 | Day | 内容 | 状态 |
 |---|---|---|
 | 1 | 骨架 / 契约 / CLI / mock 端到端 / 缓存指纹 | ✅ |
-| 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | 待做 |
+| 2 | DeepSeek 客户端、重试、磁盘缓存、成本记账 | 上半段 ✅ + 缓存/端到端 ✅；成本换算、seed 待做 |
 | 3 | AI 味诊断（规则 + LLM 融合） | 待做 |
 | 4 | 反讽 + 情绪 + 并行聚合 + 降级 | 待做 |
 | 5 | 人设状态 + 重写层 v1 + gate | 待做 |

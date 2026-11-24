@@ -45,8 +45,6 @@ class GovernConfig(StrictModel):
 class CacheConfig(StrictModel):
     enabled: bool = True
     dir: str = "data/cache"
-    # 重写阶段必须为 True；False 仅保留给纯文本级实验。
-    include_signal_hash: bool = True
 
 
 class CostConfig(StrictModel):

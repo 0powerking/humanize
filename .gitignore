@@ -21,3 +21,6 @@ data/eval/annotations/*.local.csv
 .vscode/
 .DS_Store
 Thumbs.db
+
+# pytest tmp_path artifacts (TEMP may point inside the repo on this host)
+pytest-of-*/

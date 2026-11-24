@@ -102,6 +102,8 @@ class HumanizePipeline:
 
         degraded = tuple(sorted(set(signals.meta.degraded) | set(rewrite_degraded)))
         usage = self._usage(signal_results, rewrite_result)
+        all_results = [*signal_results, *([rewrite_result] if rewrite_result else [])]
+        cache_source_models = sorted({r.model for r in all_results if r.cached})
 
         return RunRecord(
             schema_version=SCHEMA_VERSION,
@@ -133,6 +135,9 @@ class HumanizePipeline:
                 "signal_fingerprint": signal_fingerprint(signals),
                 "lexicon_version": self.lexicon.version,
                 "degraded": list(degraded),
+                # Provenance of cached answers, so a hit produced by a different
+                # model is visible in the record instead of being invisible.
+                "cache_source_models": cache_source_models,
             },
         )
 
@@ -245,7 +250,9 @@ class HumanizePipeline:
         payload: dict[str, Any] = {
             "raw_reply": inp.raw_reply,
             "scene": inp.context.scene.value,
-            "signals": signals.model_dump(mode="json"),
+            # Provenance (signals.meta) is intentionally not sent to the rewriter;
+            # the same projection is what the cache hashes (ADR-004).
+            "signals": signals.rewrite_view(),
             "persona_state": signals.persona_state.model_dump(mode="json"),
             "constraints": {
                 "allow_noop": allow_noop,
@@ -437,13 +444,15 @@ class HumanizePipeline:
         price_prompt = self.cfg.cost.price_per_1m_prompt_yuan
         price_completion = self.cfg.cost.price_per_1m_completion_yuan
         results = [*signal_results, *([rewrite_result] if rewrite_result else [])]
-        prompt_tokens = sum(result.prompt_tokens for result in results)
-        completion_tokens = sum(result.completion_tokens for result in results)
+        billable = [result for result in results if not result.cached]
+        prompt_tokens = sum(result.prompt_tokens for result in billable)
+        completion_tokens = sum(result.completion_tokens for result in billable)
         cost = (prompt_tokens / 1_000_000) * price_prompt + (
             completion_tokens / 1_000_000
         ) * price_completion
         return Usage(
-            calls=len(results),
+            calls=len(billable),
+            cache_hits=len(results) - len(billable),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             cost_yuan=round(cost, 6),
